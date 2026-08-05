@@ -670,13 +670,17 @@ function WrittenQuestions({ token }) {
                   ✕ বাদ দিন
                 </button>
               </div>
-              <textarea
-                className="input"
-                rows={form.kind === "spelling" ? 1 : 2}
-                placeholder={form.kind === "spelling" ? "যেমনঃ সমীচিণ" : `${i + 1} নম্বর প্রশ্ন লিখুন...`}
-                value={sq.text}
-                onChange={(e) => updateSubQuestion(i, "text", e.target.value)}
-              />
+              
+              {/* প্রশ্ন লেখার ক্ষেত্রেও RichTextEditor যুক্ত করা হলো */}
+              <div className="mb-2">
+                <RichTextEditor
+                  value={sq.text}
+                  onChange={(html) => updateSubQuestion(i, "text", html)}
+                  placeholder={form.kind === "spelling" ? "যেমনঃ সমীচিণ" : `${i + 1} নম্বর প্রশ্ন লিখুন...`}
+                  resetKey={resetKey}
+                />
+              </div>
+
               <div className="mt-2 flex items-center gap-2">
                 <label className="text-xs font-semibold text-[var(--color-ink)]">নম্বর:</label>
                 <input
