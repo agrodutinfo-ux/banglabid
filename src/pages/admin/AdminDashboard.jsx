@@ -652,32 +652,41 @@ function WrittenQuestions({ token }) {
           </Field>
         )}
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <span className="block text-sm font-semibold text-[var(--color-ink)]">
             {form.kind === "spelling" ? "ভুল বানানগুলো (একটা করে)" : "প্রশ্নসমূহ"}
           </span>
           {form.subQuestions.map((sq, i) => (
-            <div key={i} className="flex gap-2">
-              <input
-                className="input flex-1"
-                placeholder={form.kind === "spelling" ? "যেমনঃ সমীচিণ" : `প্রশ্ন ${i + 1}`}
+            <div key={i} className="rounded-lg border border-[var(--color-paper-line)] bg-[var(--color-paper)] p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--color-ink)] font-display text-xs font-bold text-white">
+                  {i + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeSubQuestion(i)}
+                  className="rounded-lg border border-[var(--color-redpen)] px-2 py-0.5 text-xs font-bold text-[var(--color-redpen)]"
+                >
+                  ✕ বাদ দিন
+                </button>
+              </div>
+              <textarea
+                className="input"
+                rows={form.kind === "spelling" ? 1 : 2}
+                placeholder={form.kind === "spelling" ? "যেমনঃ সমীচিণ" : `${i + 1} নম্বর প্রশ্ন লিখুন...`}
                 value={sq.text}
                 onChange={(e) => updateSubQuestion(i, "text", e.target.value)}
               />
-              <input
-                className="input w-20"
-                type="number"
-                title="নম্বর"
-                value={sq.points}
-                onChange={(e) => updateSubQuestion(i, "points", Number(e.target.value))}
-              />
-              <button
-                type="button"
-                onClick={() => removeSubQuestion(i)}
-                className="rounded-lg border border-[var(--color-redpen)] px-2 text-xs font-bold text-[var(--color-redpen)]"
-              >
-                ✕
-              </button>
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-xs font-semibold text-[var(--color-ink)]">নম্বর:</label>
+                <input
+                  className="input w-24"
+                  type="number"
+                  min="0"
+                  value={sq.points}
+                  onChange={(e) => updateSubQuestion(i, "points", Number(e.target.value))}
+                />
+              </div>
             </div>
           ))}
           <button
