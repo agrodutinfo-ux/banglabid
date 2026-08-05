@@ -16,8 +16,8 @@ function fileToBase64(file) {
 }
 
 /** ছবি Google Drive-এ আপলোড হতে দেরি হওয়ার প্রধান কারণ ফোনের ক্যামেরার আসল ছবি
- * অনেক বড় (কয়েক MB) হয় — এটাকে ব্রাউজারেই ছোট করে (সর্বোচ্চ ১৪০০px চওড়া,
- * JPEG quality 0.72) নেটওয়ার্কে পাঠানো হয়, যাতে আপলোড অনেক দ্রুত হয়। */
+ *  অনেক বড় (কয়েক MB) হয় — এটাকে ব্রাউজারেই ছোট করে (সর্বোচ্চ ১৪০০px চওড়া,
+ *  JPEG quality 0.72) নেটওয়ার্কে পাঠানো হয়, যাতে আপলোড অনেক দ্রুত হয়। */
 function compressImage(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -233,13 +233,10 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
             <div className="space-y-4">
               {(set.subQuestions || []).map((sq, qi) => (
                 <div key={sq.id} className="border-t border-dashed border-[var(--color-paper-line)] pt-3 first:border-t-0 first:pt-0">
-                  
-                  {/* প্রশ্ন যেন ফরম্যাটিং (স্পেস, কালার, লাইন ব্রেক) সহ রেন্ডার হয় */}
-                  <div className="font-semibold text-[var(--color-ink)]">
-                    <span>{kind === "spelling" ? `${qi + 1 + si * (set.subQuestions?.length || 0)}. ` : `${qi + 1}. `}</span>
-                    <span dangerouslySetInnerHTML={{ __html: sq.text }} className="inline-block" />
-                    <span className="text-xs font-normal text-[var(--color-text)]/50"> ({sq.points} নম্বর)</span>
-                  </div>
+                  <p className="font-semibold text-[var(--color-ink)]">
+                    {kind === "spelling" ? `${qi + 1 + si * (set.subQuestions?.length || 0)}. ` : `${qi + 1}. `}
+                    {sq.text} <span className="text-xs font-normal text-[var(--color-text)]/50">({sq.points} নম্বর)</span>
+                  </p>
 
                   {!images[sq.id] ? (
                     <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-marigold)] bg-[var(--color-marigold)]/10 px-4 py-4 font-display text-sm font-bold text-[var(--color-marigold-dark)] transition hover:bg-[var(--color-marigold)]/20">
