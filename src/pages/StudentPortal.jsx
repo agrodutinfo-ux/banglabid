@@ -105,43 +105,14 @@ export default function StudentPortal() {
         </div>
 
         <h2 className="mt-8 font-display font-bold text-[var(--color-ink)]">অনুধাবনমূলক ও বানান ফলাফল</h2>
-        <div className="mt-3 space-y-3">
+        <div className="mt-3 space-y-2">
           {writtenAttempts === null && <Loader label="ফলাফল লোড হচ্ছে…" />}
           {writtenAttempts && writtenAttempts.length === 0 && (
             <p className="text-sm text-[var(--color-text)]/60">এখনো কোনো খাতা জমা দেননি।</p>
           )}
-          {writtenAttempts &&
-            writtenAttempts.map((session) => {
-              const graded = session.items.every((i) => i.status === "graded");
-              const total = session.items.reduce((n, i) => n + (Number(i.points) || 0), 0);
-              const score = session.items.reduce((n, i) => n + (Number(i.score) || 0), 0);
-              return (
-                <div key={session.sessionId} className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[var(--color-ink)]">
-                      {KIND_LABEL[session.kind] || session.kind} ({EXAM_TYPE_LABEL[session.examType] || session.examType})
-                    </span>
-                    {graded ? (
-                      <span className="font-display font-bold text-[var(--color-greenpen)]">{score}/{total}</span>
-                    ) : (
-                      <span className="rounded-full bg-[var(--color-marigold)]/20 px-3 py-0.5 text-xs font-bold text-[var(--color-marigold-dark)]">পেন্ডিং</span>
-                    )}
-                  </div>
-                  {graded && (
-                    <div className="mt-2 space-y-2">
-                      {session.items.map((item) => (
-                        <div key={item.id} className="rounded-md bg-[var(--color-paper)] p-2">
-                          <p className="text-xs text-[var(--color-text)]/70">{item.subQuestionText}</p>
-                          <p className="mt-1 text-xs font-bold text-[var(--color-ink)]">নম্বর: {item.score}/{item.points}</p>
-                          {item.adminComment && <p className="mt-1 text-xs text-[var(--color-bluepen)]">মন্তব্য: {item.adminComment}</p>}
-                          <img src={item.annotatedImageUrl || item.imageUrl} alt="মূল্যায়িত খাতা" className="mt-2 max-h-48 rounded-md border border-[var(--color-paper-line)]" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          {writtenAttempts && writtenAttempts.length > 0 && (
+            <WrittenResultsList sessions={writtenAttempts} />
+          )}
         </div>
       </div>
     </div>
@@ -151,6 +122,73 @@ export default function StudentPortal() {
 const ORDINALS = ["প্রথম", "দ্বিতীয়", "তৃতীয়", "চতুর্থ", "পঞ্চম", "ষষ্ঠ", "সপ্তম", "অষ্টম", "নবম", "দশম"];
 function ordinalBn(n) {
   return ORDINALS[n - 1] || `${n}তম`;
+}
+
+function WrittenResultsList({ sessions }) {
+  const [openId, setOpenId] = useState(null);
+
+  // ordinal সংখ্যা বসানোর জন্য পুরনো থেকে নতুন ক্রমে গুনতে হয় (sessions প্রপে
+  // নতুন থেকে পুরনো ক্রমে আসে ব্যাকএন্ড থেকে)
+  const ordinalBySessionId = {};
+  const countByKind = {};
+  [...sessions]
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .forEach((s) => {
+      countByKind[s.kind] = (countByKind[s.kind] || 0) + 1;
+      ordinalBySessionId[s.sessionId] = countByKind[s.kind];
+    });
+
+  return (
+    <>
+      {sessions.map((session) => {
+        const graded = session.items.every((i) => i.status === "graded");
+        const total = session.items.reduce((n, i) => n + (Number(i.points) || 0), 0);
+        const score = session.items.reduce((n, i) => n + (Number(i.score) || 0), 0);
+        const isOpen = openId === session.sessionId;
+        const label = `${KIND_LABEL[session.kind] || session.kind} ${ordinalBySessionId[session.sessionId]}`;
+
+        return (
+          <div key={session.sessionId} className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 text-sm">
+            <button
+              onClick={() => setOpenId(isOpen ? null : session.sessionId)}
+              className="flex w-full items-center justify-between px-3 py-3 text-left"
+            >
+              <span className="font-semibold text-[var(--color-ink)]">
+                {label} <span className="text-xs font-normal text-[var(--color-text)]/50">({EXAM_TYPE_LABEL[session.examType] || session.examType})</span>
+              </span>
+              <span className="flex items-center gap-2">
+                {graded ? (
+                  <span className="font-display font-bold text-[var(--color-greenpen)]">{score}/{total}</span>
+                ) : (
+                  <span className="rounded-full bg-[var(--color-marigold)]/20 px-3 py-0.5 text-xs font-bold text-[var(--color-marigold-dark)]">পেন্ডিং</span>
+                )}
+                <span className="text-[var(--color-text)]/40">{isOpen ? "▲" : "▼"}</span>
+              </span>
+            </button>
+
+            {isOpen && (
+              <div className="space-y-2 border-t border-[var(--color-paper-line)] p-3">
+                {session.items.map((item) => (
+                  <div key={item.id} className="rounded-md bg-[var(--color-paper)] p-2">
+                    <p className="text-xs text-[var(--color-text)]/70">{item.subQuestionText}</p>
+                    {item.status === "graded" ? (
+                      <>
+                        <p className="mt-1 text-xs font-bold text-[var(--color-ink)]">নম্বর: {item.score}/{item.points}</p>
+                        {item.adminComment && <p className="mt-1 text-xs text-[var(--color-bluepen)]">মন্তব্য: {item.adminComment}</p>}
+                        <img src={item.annotatedImageUrl || item.imageUrl} alt="মূল্যায়িত খাতা" className="mt-2 max-h-48 rounded-md border border-[var(--color-paper-line)]" />
+                      </>
+                    ) : (
+                      <p className="mt-1 text-xs font-semibold text-[var(--color-marigold-dark)]">মূল্যায়নের অপেক্ষায়</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 function ExamCard({ title, enabled, to }) {

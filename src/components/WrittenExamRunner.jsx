@@ -15,6 +15,31 @@ function fileToBase64(file) {
   });
 }
 
+/** ছবি Google Drive-এ আপলোড হতে দেরি হওয়ার প্রধান কারণ ফোনের ক্যামেরার আসল ছবি
+ *  অনেক বড় (কয়েক MB) হয় — এটাকে ব্রাউজারেই ছোট করে (সর্বোচ্চ ১৪০০px চওড়া,
+ *  JPEG quality 0.72) নেটওয়ার্কে পাঠানো হয়, যাতে আপলোড অনেক দ্রুত হয়। */
+function compressImage(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 1400;
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", 0.72));
+    };
+    img.onerror = () => resolve(dataUrl); // ব্যর্থ হলে মূল ছবিটাই ব্যবহার হবে
+    img.src = dataUrl;
+  });
+}
+
 export default function WrittenExamRunner({ examType = "mock", kind = "written", onFinished }) {
   const token = localStorage.getItem("banglabid_student_token");
   const minutes = MINUTES[kind] || 30;
@@ -78,14 +103,26 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
 
   async function handleFile(subQ, file) {
     if (!file) return;
-    const dataUrl = await fileToBase64(file);
-    setImages((prev) => ({ ...prev, [subQ.id]: { dataUrl, mimeType: file.type, subQ } }));
+    const rawDataUrl = await fileToBase64(file);
+    const dataUrl = await compressImage(rawDataUrl);
+    setImages((prev) => ({ ...prev, [subQ.id]: { dataUrl, mimeType: "image/jpeg", subQ } }));
   }
+
+  function clearImage(subQId) {
+    setImages((prev) => {
+      const next = { ...prev };
+      delete next[subQId];
+      return next;
+    });
+  }
+
+  const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 });
 
   async function submitAll() {
     if (stageRef.current !== "exam") return;
     setStage("submitting");
     const entries = Object.values(imagesRef.current);
+    setSubmitProgress({ done: 0, total: entries.length });
     try {
       for (const entry of entries) {
         await api.submitWrittenAnswer({
@@ -100,6 +137,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
           imageBase64: entry.dataUrl,
           mimeType: entry.mimeType,
         });
+        setSubmitProgress((p) => ({ ...p, done: p.done + 1 }));
       }
       setStage("done");
     } catch {
@@ -131,7 +169,18 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
     );
   }
 
-  if (stage === "submitting") return <Loader full label="খাতা জমা হচ্ছে…" />;
+  if (stage === "submitting") {
+    return (
+      <Loader
+        full
+        label={
+          submitProgress.total
+            ? `খাতা জমা হচ্ছে… (${submitProgress.done}/${submitProgress.total})`
+            : "খাতা জমা হচ্ছে…"
+        }
+      />
+    );
+  }
 
   if (stage === "done") {
     return (
@@ -188,18 +237,30 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
                     {kind === "spelling" ? `${qi + 1 + si * (set.subQuestions?.length || 0)}. ` : `${qi + 1}. `}
                     {sq.text} <span className="text-xs font-normal text-[var(--color-text)]/50">({sq.points} নম্বর)</span>
                   </p>
-                  <label className="mt-2 block">
-                    <span className="mb-1 block text-xs font-semibold text-[var(--color-ink)]">উত্তরের ছবি আপলোড করুন</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={(e) => handleFile(sq, e.target.files?.[0])}
-                      className="block w-full text-xs"
-                    />
-                  </label>
-                  {images[sq.id] && (
-                    <img src={images[sq.id].dataUrl} alt="উত্তরের প্রিভিউ" className="mt-2 max-h-40 rounded-lg border border-[var(--color-paper-line)]" />
+
+                  {!images[sq.id] ? (
+                    <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-marigold)] bg-[var(--color-marigold)]/10 px-4 py-4 font-display text-sm font-bold text-[var(--color-marigold-dark)] transition hover:bg-[var(--color-marigold)]/20">
+                      📷 উত্তরের ছবি তুলুন / আপলোড করুন
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => handleFile(sq, e.target.files?.[0])}
+                        className="hidden"
+                      />
+                    </label>
+                  ) : (
+                    <div className="relative mt-3 inline-block">
+                      <img src={images[sq.id].dataUrl} alt="উত্তরের প্রিভিউ" className="max-h-56 rounded-lg border border-[var(--color-paper-line)]" />
+                      <button
+                        type="button"
+                        onClick={() => clearImage(sq.id)}
+                        title="ছবি বাদ দিয়ে আবার তুলুন"
+                        className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-redpen)] font-bold text-white shadow-md"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
