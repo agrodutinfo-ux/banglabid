@@ -1,0 +1,58 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Baloo+Da+2:wght@500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Hind+Siliguri:wght@400;500;600;700&display=swap');
+
+@theme {
+  --font-display: "Baloo Da 2", "Hind Siliguri", "Noto Sans Bengali", system-ui, sans-serif;
+  --font-body: "Hind Siliguri", "Noto Sans Bengali", system-ui, sans-serif;
+
+  --color-ink: #0f3d3e;
+  --color-ink-dark: #0a2b2c;
+  --color-paper: #eff1ec;
+  --color-paper-line: #d8ddd3;
+  --color-marigold: #d98e04;
+  --color-marigold-dark: #b3720a;
+  --color-redpen: #b23a2e;
+  --color-bluepen: #2b4f9e;
+  --color-greenpen: #2f7a4f;
+  --color-text: #16211f;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  touch-action: manipulation;
+}
+
+.font-display { font-family: var(--font-display); }
+
+.margin-rule {
+  background-image: linear-gradient(to right, transparent 0, transparent 48px, var(--color-redpen) 48px, var(--color-redpen) 50px, transparent 50px);
+}
+
+.paper-lines {
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 34px, var(--color-paper-line) 34px, var(--color-paper-line) 35px);
+}
+
+::selection { background: var(--color-marigold); color: var(--color-ink-dark); }
+
+.input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1.5px solid var(--color-paper-line);
+  background: white;
+  padding: 0.65rem 0.9rem;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input:focus {
+  border-color: var(--color-marigold);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-marigold) 25%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
