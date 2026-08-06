@@ -19,7 +19,7 @@ export function TopBar() {
             to="/status"
             className="rounded-full bg-[var(--color-marigold)] px-3 py-1.5 font-display text-xs font-bold text-[var(--color-ink-dark)] shadow-sm transition hover:brightness-110 sm:px-4 sm:text-sm"
           >
-            রেজিস্ট্রেশন স্ট্যাটাস
+            নিবন্ধন স্ট্যাটাস
           </Link>
           <Link
             to={localStorage.getItem("banglabid_student_token") ? "/student" : "/student/login"}

@@ -395,7 +395,7 @@ function correctTextForQuestion_(q) {
 
 /**
  * প্রশ্ন বাছাইয়ের নিয়মঃ মোট প্রশ্নের ৫০% সাহিত্য, ৫০% ব্যাকরণ — এবং ব্যাকরণের
- * মধ্যে ২৫% বানান-সংক্রান্ত। পর্যাপ্ত প্রশ্ন না থাকলে যতটা সম্ভব ওই ভাগ থেকে
+ * মধ্যে ৩৫% বানান-সংক্রান্ত। পর্যাপ্ত প্রশ্ন না থাকলে যতটা সম্ভব ওই ভাগ থেকে
  * নিয়ে বাকিটা অন্য ভাগ থেকে পূরণ করা হয়, যাতে মোট সংখ্যা ঠিক থাকে।
  */
 function pickCategorizedQuestions_(pool, targetTotal) {
@@ -414,12 +414,12 @@ function pickCategorizedQuestions_(pool, targetTotal) {
   const pickedOtherGrammar = shuffleArray_(otherGrammar).slice(0, wantOtherGrammar);
 
   let picked = [...pickedLit, ...pickedSpelling, ...pickedOtherGrammar];
-  const usedIds = new Set(picked.map((q) => q.id));
+  const usedRows = new Set(picked.map((q) => q._row));
 
   // শর্টফল থাকলে বাকি প্রশ্নের পুল থেকে পূরণ করা (ক্যাটাগরি না মেলাটা এখানে
   // গ্রহণযোগ্য — সঠিক অনুপাত না মেলার চেয়ে পরীক্ষা চালু থাকাটা জরুরি)
   if (picked.length < targetTotal) {
-    const remaining = shuffleArray_(pool.filter((q) => !usedIds.has(q.id)));
+    const remaining = shuffleArray_(pool.filter((q) => !usedRows.has(q._row)));
     picked = picked.concat(remaining.slice(0, targetTotal - picked.length));
   }
 
@@ -429,15 +429,34 @@ function pickCategorizedQuestions_(pool, targetTotal) {
 /**
  * একজন স্টুডেন্টের জন্য প্রশ্ন বাছাই করা হয়, প্রশ্নের ক্রম ও প্রতিটা প্রশ্নের
  * অপশনের ক্রম শাফল করে পাঠানো হয় — সঠিক উত্তর কোনটা সেটা ক্লায়েন্টে পাঠানো হয় না।
+ *
+ * গুরুত্বপূর্ণঃ প্রতিটা প্রশ্নের ক্লায়েন্ট-facing id হিসেবে শিটের row-নম্বর
+ * ব্যবহার করা হয় ("id" কলামের মান না) — কারণ কেউ যদি শিটে কোনো প্রশ্নের সারি
+ * কপি-পেস্ট করে (যেটা "id" কলামের মানও কপি করে ফেলে), তাহলে দুইটা আলাদা
+ * প্রশ্নের "id" এক হয়ে যেতে পারে, যার ফলে পরীক্ষায় ভুল প্রশ্নের সাথে উত্তর
+ * মিলে যেত এবং এনালাইসিসে সম্পূর্ণ ভিন্ন প্রশ্ন দেখাত। Row-নম্বর কখনো
+ * ডুপ্লিকেট হয় না বলে এই সমস্যা এড়ানো যায়। এছাড়া হুবহু একই লেখার প্রশ্ন
+ * (ডুপ্লিকেট সারি) একই পরীক্ষায় দুইবার না আসে সেটাও নিশ্চিত করা হয়।
  */
 function getMcqExam_(examType) {
   const all = sheetToObjects_(getSheet_("Questions"));
-  const pool = all.filter((q) => (examType === "live" ? q.forLive : q.forMock));
+  const filtered = all.filter((q) => (examType === "live" ? q.forLive : q.forMock));
+
+  // হুবহু একই লেখার প্রশ্ন (কপি-পেস্ট করা ডুপ্লিকেট সারি) বাদ দেওয়া হচ্ছে —
+  // প্রথমটাই রাখা হয়, যাতে একই পরীক্ষায় একই প্রশ্ন দুইবার না আসে
+  const seenText = new Set();
+  const pool = filtered.filter((q) => {
+    const key = String(q.question || "").trim().toLowerCase();
+    if (seenText.has(key)) return false;
+    seenText.add(key);
+    return true;
+  });
+
   const picked = pickCategorizedQuestions_(pool, 40);
 
   return picked.map((q) => {
     const options = shuffleArray_(["A", "B", "C", "D"].map((k) => q["option" + k]));
-    return { id: q.id, question: q.question, options };
+    return { id: String(q._row), question: q.question, options };
   });
 }
 
@@ -446,16 +465,18 @@ function getMcqExam_(examType) {
  * কারণ শাফল করা ছিল) পাঠায় — খালি অ্যারে মানে উত্তর দেয়নি, একাধিক টেক্সট মানে
  * একাধিক অপশন সিলেক্ট করেছে (দুটোই ভুল ধরা হয়)। ক্লায়েন্ট থেকে অবশ্যই *সবগুলো*
  * প্রশ্নের জন্য এন্ট্রি পাঠাতে হবে (উত্তর না দেওয়া প্রশ্নগুলোরও), যাতে সম্পূর্ণ
- * এক্সাম বিশ্লেষণ করা যায়।
+ * এক্সাম বিশ্লেষণ করা যায়। getMcqExam_-এর সাথে সামঞ্জস্য রেখে এখানেও শিটের
+ * row-নম্বর দিয়ে প্রশ্ন খোঁজা হয় ("id" কলাম দিয়ে না) যাতে ডুপ্লিকেট id থাকলেও
+ * সঠিক প্রশ্নের সাথেই মিলে।
  */
 function scoreMcqAnswers_(answers) {
   const all = sheetToObjects_(getSheet_("Questions"));
-  const byId = {};
-  all.forEach((q) => (byId[q.id] = q));
+  const byRow = {};
+  all.forEach((q) => (byRow[String(q._row)] = q));
 
   let score = 0;
   const details = answers.map((a) => {
-    const q = byId[a.id];
+    const q = byRow[String(a.id)];
     if (!q) return null;
     const options = ["A", "B", "C", "D"].map((k) => q["option" + k]);
     const correctText = correctTextForQuestion_(q);
@@ -463,7 +484,7 @@ function scoreMcqAnswers_(answers) {
     const isCorrect = selectedTexts.length === 1 && selectedTexts[0] === correctText;
     if (isCorrect) score++;
     return {
-      id: q.id,
+      id: String(q._row),
       question: q.question,
       options,
       selectedTexts,
@@ -591,14 +612,39 @@ function parsedWrittenQuestions_() {
   }));
 }
 
+/** কোনো স্টুডেন্ট এই kind-এ এখন পর্যন্ত কোন কোন প্রশ্ন/শব্দ অ্যাটেম্পট করেছে
+ *  তার আইডিগুলো ফেরত দেয় — written-এ পুরো প্যাসেজ (writtenQuestionId) স্তরে,
+ *  spelling-এ প্রতিটা শব্দ (subQuestionId) স্তরে। */
+function getAttemptedIds_(registrationId, kind) {
+  const rows = sheetToObjects_(getSheet_("WrittenAttempts")).filter(
+    (a) => String(a.registrationId) === String(registrationId) && a.kind === kind
+  );
+  const field = kind === "spelling" ? "subQuestionId" : "writtenQuestionId";
+  return new Set(rows.map((a) => String(a[field])));
+}
+
+/** আগে যা দেওয়া হয়নি সেগুলো থেকে আগে বাছাই করে; পুরো ব্যাংক শেষ হয়ে গেলে
+ *  (unseen কম পড়লে) আগে দেওয়া প্রশ্ন থেকে বাকিটা পূরণ করে — অর্থাৎ পুরো
+ *  ব্যাংক শেষ হলেই আবার শুরু থেকে চক্র চলে। */
+function pickAvoidingRepeats_(items, needed, attemptedIds, idKey) {
+  const unseen = items.filter((it) => !attemptedIds.has(String(it[idKey])));
+  const seen = items.filter((it) => attemptedIds.has(String(it[idKey])));
+  let picked = shuffleArray_(unseen).slice(0, needed);
+  if (picked.length < needed) {
+    picked = picked.concat(shuffleArray_(seen).slice(0, needed - picked.length));
+  }
+  return picked;
+}
+
 /** kind অনুযায়ী (written/spelling) এবং mock/live অনুযায়ী শুধু published প্রশ্ন
- *  থেকে র‍্যান্ডমলি বাছাই করে। written হলে ৩টা প্যাসেজ (প্রতিটায় যত সাব-প্রশ্ন
- *  থাকুক), spelling হলে সরাসরি ১০টা প্রশ্ন (কোনো প্যাসেজ ছাড়া, প্রতিটাই একটা
- *  আলাদা আইটেম)। */
-function getWrittenSets_(examType, kind) {
+ *  থেকে বাছাই করে। written হলে ৩টা প্যাসেজ, spelling হলে ৫টা শব্দ। registrationId
+ *  দেওয়া থাকলে স্টুডেন্টের আগে-না-দেওয়া প্রশ্ন/শব্দকে অগ্রাধিকার দেওয়া হয় —
+ *  পুরো ব্যাংক শেষ করলেই আবার শুরু থেকে (রিপিট) চক্র চলে। */
+function getWrittenSets_(examType, kind, registrationId) {
   const all = parsedWrittenQuestions_().filter(
     (q) => q.status === "published" && (examType === "live" ? q.forLive : q.forMock) && q.kind === kind
   );
+  const attemptedIds = registrationId ? getAttemptedIds_(registrationId, kind) : new Set();
 
   if (kind === "spelling") {
     const flatItems = [];
@@ -607,13 +653,13 @@ function getWrittenSets_(examType, kind) {
         flatItems.push({ writtenQuestionId: q.id, subQuestionId: sq.id, text: sq.text, points: sq.points });
       });
     });
-    const picked = shuffleArray_(flatItems).slice(0, 10);
+    const picked = pickAvoidingRepeats_(flatItems, 5, attemptedIds, "subQuestionId");
     return [{ id: "spelling-set", passageHtml: "", subQuestions: picked.map((p) => ({
       id: p.subQuestionId, writtenQuestionId: p.writtenQuestionId, text: p.text, points: p.points,
     })) }];
   }
 
-  const picked = shuffleArray_(all).slice(0, 3);
+  const picked = pickAvoidingRepeats_(all, 3, attemptedIds, "id");
   return picked.map((q) => ({
     id: q.id,
     passageHtml: q.passageHtml,
@@ -966,7 +1012,7 @@ function doPost(e) {
           const win = isLiveExamOpen_();
           if (!win.open) return jsonOut_({ ok: false, message: win.reason });
         }
-        const sets = getWrittenSets_(examType, body.kind === "spelling" ? "spelling" : "written");
+        const sets = getWrittenSets_(examType, body.kind === "spelling" ? "spelling" : "written", reg.id);
         if (sets.length === 0 || sets.every((s) => (s.subQuestions || []).length === 0)) {
           return jsonOut_({ ok: false, message: "এখনো কোনো প্রশ্ন প্রকাশ করা হয়নি। পরে আবার চেষ্টা করুন।" });
         }
@@ -992,6 +1038,35 @@ function doPost(e) {
           imageUrl,
         });
         return jsonOut_({ ok: true, data: { id, imageUrl } });
+      }
+
+      /** বানান প্রতিযোগিতার জন্য — একটামাত্র ছবি (সব কয়টা শব্দের উত্তর একসাথে
+       *  একই পৃষ্ঠায়) একবারই Drive-এ আপলোড হয়, তারপর প্রতিটা শব্দের জন্য
+       *  আলাদা আলাদা WrittenAttempts সারি তৈরি হয় (সবগুলো একই ছবির লিংক শেয়ার
+       *  করে) — যাতে প্রতিটা শব্দ আলাদাভাবে ট্র্যাক/মূল্যায়ন করা যায়, কিন্তু
+       *  ছবি বারবার আপলোড করতে না হয় (দ্রুত হওয়ার জন্য)। */
+      case "submitWrittenAnswersBatch": {
+        const reg = findRegistrationByStudentToken_(body.token);
+        if (!reg) return jsonOut_({ ok: false, message: "Unauthorized — আবার লগইন করুন।" });
+        if (!body.imageBase64) return jsonOut_({ ok: false, message: "ছবি পাওয়া যায়নি।" });
+        if (!body.items || body.items.length === 0) return jsonOut_({ ok: false, message: "কোনো প্রশ্ন পাওয়া যায়নি।" });
+        const imageUrl = uploadImageToDrive_(body.imageBase64, body.mimeType, "answer_" + Utilities.getUuid() + ".jpg");
+        const ids = body.items.map((item) =>
+          saveWrittenAttempt_({
+            registrationId: reg.id,
+            phone: reg.phone,
+            email: reg.email,
+            examType: body.examType || "mock",
+            kind: body.kind === "spelling" ? "spelling" : "written",
+            sessionId: body.sessionId,
+            writtenQuestionId: item.writtenQuestionId,
+            subQuestionId: item.subQuestionId,
+            subQuestionText: item.subQuestionText,
+            points: item.points,
+            imageUrl,
+          })
+        );
+        return jsonOut_({ ok: true, data: { ids, imageUrl } });
       }
 
       case "studentWrittenAttempts": {

@@ -56,7 +56,7 @@ export default function StudentLogin() {
       </form>
 
       <p className="mt-4 text-center text-sm text-[var(--color-text)]/60">
-        এখনো ্নিবন্ধন করেননি? <a href="/register" className="font-semibold text-[var(--color-bluepen)]">এখানে নিবন্ধন করুন</a>
+        এখনো নিবন্ধন করেননি? <a href="/register" className="font-semibold text-[var(--color-bluepen)]">এখানে নিবন্ধন করুন</a>
       </p>
     </div>
   );

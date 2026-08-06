@@ -43,6 +43,7 @@ export const api = {
 
   startWrittenExam: (token, examType, kind) => callApi("startWrittenExam", { token, examType, kind }),
   submitWrittenAnswer: (payload) => callApi("submitWrittenAnswer", payload),
+  submitWrittenAnswersBatch: (payload) => callApi("submitWrittenAnswersBatch", payload),
 
   leaderboard: (examType) => callApi("leaderboard", { examType }),
 

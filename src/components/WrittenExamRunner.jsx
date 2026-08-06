@@ -35,7 +35,7 @@ function compressImage(dataUrl) {
       canvas.getContext("2d").drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL("image/jpeg", 0.72));
     };
-    img.onerror = () => resolve(dataUrl); // ব্যর্থ হলে মূল ছবিটাই ব্যবহার হবে
+    img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
 }
@@ -43,17 +43,20 @@ function compressImage(dataUrl) {
 export default function WrittenExamRunner({ examType = "mock", kind = "written", onFinished }) {
   const token = localStorage.getItem("banglabid_student_token");
   const minutes = MINUTES[kind] || 30;
+  const isSpelling = kind === "spelling";
 
-  const [stage, setStage] = useState("loading"); // loading -> exam -> submitting -> done -> error
+  const [stage, setStage] = useState("loading");
   const [error, setError] = useState("");
-  const [sessionId, setSessionId] = useState("");
   const [sets, setSets] = useState([]);
-  const [images, setImages] = useState({}); // { [subQuestionId]: { dataUrl, mimeType } }
+  const [images, setImages] = useState({});
+  const [combinedImage, setCombinedImage] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(minutes * 60);
+  const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 });
 
   const stageRef = useRef("loading");
   const imagesRef = useRef(images);
   imagesRef.current = images;
+  const combinedImageRef = useRef(null);
   const setsRef = useRef(sets);
   setsRef.current = sets;
   const sessionIdRef = useRef("");
@@ -64,7 +67,6 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
       .startWrittenExam(token, examType, kind)
       .then((res) => {
         if (res.ok) {
-          setSessionId(res.data.sessionId);
           sessionIdRef.current = res.data.sessionId;
           setSets(res.data.sets);
           setSecondsLeft(minutes * 60);
@@ -116,33 +118,68 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
     });
   }
 
-  const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 });
+  async function handleCombinedFile(file) {
+    if (!file) return;
+    const rawDataUrl = await fileToBase64(file);
+    const dataUrl = await compressImage(rawDataUrl);
+    const val = { dataUrl, mimeType: "image/jpeg" };
+    combinedImageRef.current = val;
+    setCombinedImage(val);
+  }
+
+  function clearCombinedImage() {
+    combinedImageRef.current = null;
+    setCombinedImage(null);
+  }
 
   async function submitAll() {
     if (stageRef.current !== "exam") return;
     setStage("submitting");
-    const entries = Object.values(imagesRef.current);
-    setSubmitProgress({ done: 0, total: entries.length });
+
     try {
-      for (const entry of entries) {
-        await api.submitWrittenAnswer({
-          token,
-          examType,
-          kind,
-          sessionId: sessionIdRef.current,
-          writtenQuestionId: entry.subQ.writtenQuestionId,
-          subQuestionId: entry.subQ.id,
-          subQuestionText: entry.subQ.text,
-          points: entry.subQ.points,
-          imageBase64: entry.dataUrl,
-          mimeType: entry.mimeType,
-        });
-        setSubmitProgress((p) => ({ ...p, done: p.done + 1 }));
+      if (isSpelling) {
+        const items = (setsRef.current[0]?.subQuestions || []).map((sq) => ({
+          writtenQuestionId: sq.writtenQuestionId,
+          subQuestionId: sq.id,
+          subQuestionText: sq.text,
+          points: sq.points,
+        }));
+        if (combinedImageRef.current && items.length > 0) {
+          setSubmitProgress({ done: 0, total: 1 });
+          await api.submitWrittenAnswersBatch({
+            token,
+            examType,
+            kind,
+            sessionId: sessionIdRef.current,
+            items,
+            imageBase64: combinedImageRef.current.dataUrl,
+            mimeType: combinedImageRef.current.mimeType,
+          });
+          setSubmitProgress({ done: 1, total: 1 });
+        }
+      } else {
+        const entries = Object.values(imagesRef.current);
+        setSubmitProgress({ done: 0, total: entries.length });
+        for (const entry of entries) {
+          await api.submitWrittenAnswer({
+            token,
+            examType,
+            kind,
+            sessionId: sessionIdRef.current,
+            writtenQuestionId: entry.subQ.writtenQuestionId,
+            subQuestionId: entry.subQ.id,
+            subQuestionText: entry.subQ.text,
+            points: entry.subQ.points,
+            imageBase64: entry.dataUrl,
+            mimeType: entry.mimeType,
+          });
+          setSubmitProgress((p) => ({ ...p, done: p.done + 1 }));
+        }
       }
       setStage("done");
     } catch {
       setError("কিছু উত্তর জমা দেওয়া যায়নি — ইন্টারনেট সংযোগ চেক করে আবার চেষ্টা করুন।");
-      setStage("exam"); // উত্তরগুলো এখনো আছে, আবার Submit চাপা যাবে
+      setStage("exam");
     }
   }
 
@@ -173,11 +210,7 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
     return (
       <Loader
         full
-        label={
-          submitProgress.total
-            ? `খাতা জমা হচ্ছে… (${submitProgress.done}/${submitProgress.total})`
-            : "খাতা জমা হচ্ছে…"
-        }
+        label={submitProgress.total ? `জমা হচ্ছে… (${submitProgress.done}/${submitProgress.total})` : "জমা হচ্ছে…"}
       />
     );
   }
@@ -204,8 +237,9 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
 
   const mm = Math.floor(secondsLeft / 60);
   const ss = secondsLeft % 60;
-  const answeredCount = Object.keys(images).length;
-  const totalCount = sets.reduce((n, s) => n + (s.subQuestions || []).length, 0);
+  const spellingWords = isSpelling ? sets[0]?.subQuestions || [] : [];
+  const answeredCount = isSpelling ? (combinedImage ? spellingWords.length : 0) : Object.keys(images).length;
+  const totalCount = isSpelling ? spellingWords.length : sets.reduce((n, s) => n + (s.subQuestions || []).length, 0);
 
   return (
     <div className="min-h-screen bg-[var(--color-paper)] pb-24">
@@ -217,65 +251,92 @@ export default function WrittenExamRunner({ examType = "mock", kind = "written",
       </div>
 
       <p className="mx-auto mt-3 max-w-2xl px-4 text-xs text-[var(--color-text)]/60">
-        উত্তরপত্র খাতায় লিখে ক্যামেরা দিয়ে ছবি তুলুন অথবা গ্যালারি থেকে আপলোড করুন। এখানে
-        MCQ-এর মতো কঠোর সিকিউরিটি নেই। উত্তর দেওয়া: {answeredCount}/{totalCount}
+        {isSpelling
+          ? "সবগুলো বানান একই পৃষ্ঠায় লিখে একটাই ছবি তুলুন/আপলোড করুন।"
+          : "উত্তরপত্র খাতায় লিখে ক্যামেরা দিয়ে ছবি তুলুন অথবা গ্যালারি থেকে আপলোড করুন।"}{" "}
+        এখানে MCQ-এর মতো কঠোর সিকিউরিটি নেই। উত্তর দেওয়া: {answeredCount}/{totalCount}
       </p>
 
       <div className="mx-auto max-w-2xl space-y-5 px-4 py-4">
-        {sets.map((set, si) => (
-          <div key={set.id} className="rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
-            {set.passageHtml && (
-              <div
-                className="mb-3 rounded-lg bg-[var(--color-paper)] p-3 text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: set.passageHtml }}
-              />
-            )}
-            <div className="space-y-4">
-              {(set.subQuestions || []).map((sq, qi) => (
-                <div key={sq.id} className="border-t border-dashed border-[var(--color-paper-line)] pt-3 first:border-t-0 first:pt-0">
-                  <p className="font-semibold text-[var(--color-ink)]">
-                    {kind === "spelling" ? `${qi + 1 + si * (set.subQuestions?.length || 0)}. ` : `${qi + 1}. `}
-                    {sq.text} <span className="text-xs font-normal text-[var(--color-text)]/50">({sq.points} নম্বর)</span>
-                  </p>
-
-                  {!images[sq.id] ? (
-                    <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-marigold)] bg-[var(--color-marigold)]/10 px-4 py-4 font-display text-sm font-bold text-[var(--color-marigold-dark)] transition hover:bg-[var(--color-marigold)]/20">
-                      📷 উত্তরের ছবি তুলুন / আপলোড করুন
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={(e) => handleFile(sq, e.target.files?.[0])}
-                        className="hidden"
-                      />
-                    </label>
-                  ) : (
-                    <div className="relative mt-3 inline-block">
-                      <img src={images[sq.id].dataUrl} alt="উত্তরের প্রিভিউ" className="max-h-56 rounded-lg border border-[var(--color-paper-line)]" />
-                      <button
-                        type="button"
-                        onClick={() => clearImage(sq.id)}
-                        title="ছবি বাদ দিয়ে আবার তুলুন"
-                        className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-redpen)] font-bold text-white shadow-md"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-                </div>
+        {isSpelling ? (
+          <div className="rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
+            <ol className="list-decimal space-y-2 pl-5">
+              {spellingWords.map((sq) => (
+                <li key={sq.id} className="font-semibold text-[var(--color-ink)]">
+                  {sq.text} <span className="text-xs font-normal text-[var(--color-text)]/50">({sq.points} নম্বর)</span>
+                </li>
               ))}
-            </div>
-          </div>
-        ))}
+            </ol>
 
-        {error && (
-          <p className="rounded-lg bg-[var(--color-redpen)]/10 px-4 py-2 text-sm font-medium text-[var(--color-redpen)]">{error}</p>
+            <p className="mt-4 mb-1 text-xs font-semibold text-[var(--color-ink)]">
+              সবগুলো বানানের সঠিক উত্তর একই পৃষ্ঠায় লিখে ছবি তুলুন —
+            </p>
+
+            {!combinedImage ? (
+              <label className="mt-1 flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-marigold)] bg-[var(--color-marigold)]/10 px-4 py-5 font-display text-sm font-bold text-[var(--color-marigold-dark)] transition hover:bg-[var(--color-marigold)]/20">
+                📷 উত্তরের ছবি তুলুন / আপলোড করুন
+                <input type="file" accept="image/*" onChange={(e) => handleCombinedFile(e.target.files?.[0])} className="hidden" />
+              </label>
+            ) : (
+              <div className="relative mt-1 inline-block">
+                <img src={combinedImage.dataUrl} alt="উত্তরের প্রিভিউ" className="max-h-64 rounded-lg border border-[var(--color-paper-line)]" />
+                <button
+                  type="button"
+                  onClick={clearCombinedImage}
+                  title="ছবি বাদ দিয়ে আবার তুলুন"
+                  className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-redpen)] font-bold text-white shadow-md"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          sets.map((set) => (
+            <div key={set.id} className="rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
+              {set.passageHtml && (
+                <div
+                  className="mb-3 rounded-lg bg-[var(--color-paper)] p-3 text-sm leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: set.passageHtml }}
+                />
+              )}
+              <div className="space-y-4">
+                {(set.subQuestions || []).map((sq, qi) => (
+                  <div key={sq.id} className="border-t border-dashed border-[var(--color-paper-line)] pt-3 first:border-t-0 first:pt-0">
+                    <div className="flex items-baseline gap-1 font-semibold text-[var(--color-ink)]">
+                      <span>{qi + 1}.</span>
+                      <span dangerouslySetInnerHTML={{ __html: sq.text }} />
+                      <span className="text-xs font-normal text-[var(--color-text)]/50">({sq.points} নম্বর)</span>
+                    </div>
+
+                    {!images[sq.id] ? (
+                      <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--color-marigold)] bg-[var(--color-marigold)]/10 px-4 py-4 font-display text-sm font-bold text-[var(--color-marigold-dark)] transition hover:bg-[var(--color-marigold)]/20">
+                        📷 উত্তরের ছবি তুলুন / আপলোড করুন
+                        <input type="file" accept="image/*" onChange={(e) => handleFile(sq, e.target.files?.[0])} className="hidden" />
+                      </label>
+                    ) : (
+                      <div className="relative mt-3 inline-block">
+                        <img src={images[sq.id].dataUrl} alt="উত্তরের প্রিভিউ" className="max-h-56 rounded-lg border border-[var(--color-paper-line)]" />
+                        <button
+                          type="button"
+                          onClick={() => clearImage(sq.id)}
+                          title="ছবি বাদ দিয়ে আবার তুলুন"
+                          className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-[var(--color-redpen)] font-bold text-white shadow-md"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
         )}
 
-        <button
-          onClick={submitAll}
-          className="w-full rounded-xl bg-[var(--color-redpen)] px-6 py-3 font-display text-base font-bold text-white"
-        >
+        {error && <p className="rounded-lg bg-[var(--color-redpen)]/10 px-4 py-2 text-sm font-medium text-[var(--color-redpen)]">{error}</p>}
+
+        <button onClick={submitAll} className="w-full rounded-xl bg-[var(--color-redpen)] px-6 py-3 font-display text-base font-bold text-white">
           সবগুলো জমা দিন
         </button>
       </div>

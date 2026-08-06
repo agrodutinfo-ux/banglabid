@@ -176,7 +176,7 @@ export default function McqExamRunner({ examType = "mock", onFinished }) {
       <div className="mx-auto max-w-2xl px-4 py-10">
         <div className="rounded-2xl border border-[var(--color-paper-line)] bg-white/70 p-6 text-center">
           <p className="font-display text-lg font-semibold text-[var(--color-ink)]">
-            {examType === "live" ? "লাইভ এমসিকিউ" : `${ordinalBn(result.ordinal)} মক টেস্টে`} প্রাপ্ত নম্বর
+            {examType === "live" ? "লাইভ বহুনির্বাচনি" : `${ordinalBn(result.ordinal)} মক টেস্টে`} প্রাপ্ত নম্বর
           </p>
           <p className="mt-2 font-display text-5xl font-extrabold text-[var(--color-greenpen)]">
             {result.score} <span className="text-2xl text-[var(--color-text)]/60">/ {result.total}</span>
@@ -255,7 +255,7 @@ export default function McqExamRunner({ examType = "mock", onFinished }) {
           timeUp ? "bg-[var(--color-redpen)]" : "bg-[var(--color-ink)]"
         }`}
       >
-        <span>{examType === "live" ? "লাইভ পরীক্ষা — এমসিকিউ" : "এমসিকিউ মক টেস্ট"}</span>
+        <span>{examType === "live" ? "লাইভ পরীক্ষা — বহুনির্বাচনি" : "বহুনির্বাচনি মক টেস্ট"}</span>
         <span className="tabular-nums">
           {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
         </span>

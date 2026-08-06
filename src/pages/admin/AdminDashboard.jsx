@@ -670,13 +670,21 @@ function WrittenQuestions({ token }) {
                   ✕ বাদ দিন
                 </button>
               </div>
-              <textarea
-                className="input"
-                rows={form.kind === "spelling" ? 1 : 2}
-                placeholder={form.kind === "spelling" ? "যেমনঃ সমীচিণ" : `${i + 1} নম্বর প্রশ্ন লিখুন...`}
-                value={sq.text}
-                onChange={(e) => updateSubQuestion(i, "text", e.target.value)}
-              />
+              {form.kind === "spelling" ? (
+                <input
+                  className="input"
+                  placeholder="যেমনঃ সমীচিণ"
+                  value={sq.text}
+                  onChange={(e) => updateSubQuestion(i, "text", e.target.value)}
+                />
+              ) : (
+                <RichTextEditor
+                  value={sq.text}
+                  onChange={(html) => updateSubQuestion(i, "text", html)}
+                  placeholder={`${i + 1} নম্বর প্রশ্ন লিখুন...`}
+                  resetKey={`${resetKey}-${i}`}
+                />
+              )}
               <div className="mt-2 flex items-center gap-2">
                 <label className="text-xs font-semibold text-[var(--color-ink)]">নম্বর:</label>
                 <input
@@ -806,7 +814,7 @@ function Grading({ token }) {
     return (
       <div className="max-w-2xl">
         <button onClick={() => setSelected(null)} className="mb-3 text-sm font-bold text-[var(--color-bluepen)] underline">← তালিকায় ফিরুন</button>
-        <p className="mb-2 text-sm font-semibold text-[var(--color-ink)]">{selected.subQuestionText}</p>
+        <div className="mb-2 text-sm font-semibold text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: selected.subQuestionText }} />
         <GradingCanvas imageUrl={selected.imageUrl} onExport={setAnnotated} />
         {annotated && <p className="mt-2 text-xs text-[var(--color-greenpen)]">মার্কিং প্রস্তুত ✓ — নিচে নম্বর দিয়ে সাবমিট করুন।</p>}
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
@@ -845,7 +853,7 @@ function Grading({ token }) {
               className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 p-2 text-left"
             >
               <img src={item.imageUrl} alt="উত্তরপত্র" className="h-32 w-full rounded-md object-cover" />
-              <p className="mt-1 text-xs font-semibold text-[var(--color-ink)] line-clamp-2">{item.subQuestionText}</p>
+              <div className="mt-1 line-clamp-2 text-xs font-semibold text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: item.subQuestionText }} />
               <p className="text-xs text-[var(--color-text)]/60">
                 {KIND_LABEL_ADMIN[item.kind] || item.kind} · {EXAM_TYPE_LABEL_ADMIN[item.examType] || item.examType} · {item.points} নম্বর
               </p>

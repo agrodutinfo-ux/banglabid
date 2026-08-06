@@ -63,7 +63,7 @@ export default function StudentPortal() {
       <div className="mx-auto max-w-3xl px-4 py-6">
         {!confirmed && (
           <div className="mb-6 rounded-xl border border-[var(--color-marigold)]/40 bg-[var(--color-marigold)]/10 p-4 text-sm text-[var(--color-marigold-dark)]">
-            আপনার রেজিস্ট্রেশন এখনও কনফার্ম হয়নি ({profile.status === "rejected" ? "রিজেক্টেড" : "পেন্ডিং"})।
+            আপনার নিবন্ধন এখনও কনফার্ম হয়নি ({profile.status === "rejected" ? "রিজেক্টেড" : "পেন্ডিং"})।
             কনফার্ম হওয়ার পর পরীক্ষা দিতে পারবেন।
           </div>
         )}
@@ -81,17 +81,17 @@ export default function StudentPortal() {
 
         <h2 className="font-display font-bold text-[var(--color-ink)]">পরীক্ষা কেন্দ্র</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-          <ExamCard title="এমসিকিউ মক টেস্ট" enabled={confirmed} to="/exam/mcq" />
+          <ExamCard title="বহুনির্বাচনি মক টেস্ট" enabled={confirmed} to="/exam/mcq" />
           <ExamCard title="অনুধাবনমূলক পরীক্ষা" enabled={confirmed} to="/exam/written" />
           <ExamCard title="বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা" enabled={confirmed} to="/exam/spelling" />
           <ExamCard title="লাইভ পরীক্ষা" enabled={confirmed} to="/exam/live" />
         </div>
 
-        <h2 className="mt-8 font-display font-bold text-[var(--color-ink)]">এমসিকিউ ফলাফল</h2>
+        <h2 className="mt-8 font-display font-bold text-[var(--color-ink)]">বহুনির্বাচনি ফলাফল</h2>
         <div className="mt-3 space-y-2">
           {attempts === null && <Loader label="ফলাফল লোড হচ্ছে…" />}
           {attempts && attempts.length === 0 && (
-            <p className="text-sm text-[var(--color-text)]/60">এখনো কোনো এমসিকিউ পরীক্ষা দেননি।</p>
+            <p className="text-sm text-[var(--color-text)]/60">এখনো কোনো বহুনির্বাচনি পরীক্ষা দেননি।</p>
           )}
           {attempts &&
             attempts.map((a) => (
@@ -170,7 +170,7 @@ function WrittenResultsList({ sessions }) {
               <div className="space-y-2 border-t border-[var(--color-paper-line)] p-3">
                 {session.items.map((item) => (
                   <div key={item.id} className="rounded-md bg-[var(--color-paper)] p-2">
-                    <p className="text-xs text-[var(--color-text)]/70">{item.subQuestionText}</p>
+                    <div className="text-xs text-[var(--color-text)]/70" dangerouslySetInnerHTML={{ __html: item.subQuestionText }} />
                     {item.status === "graded" ? (
                       <>
                         <p className="mt-1 text-xs font-bold text-[var(--color-ink)]">নম্বর: {item.score}/{item.points}</p>

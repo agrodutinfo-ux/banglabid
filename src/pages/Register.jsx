@@ -35,6 +35,17 @@ export default function Register() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [bkashCopied, setBkashCopied] = useState(false);
+
+  function copyBkashNumber() {
+    navigator.clipboard
+      .writeText("01710176301")
+      .then(() => {
+        setBkashCopied(true);
+        setTimeout(() => setBkashCopied(false), 2000);
+      })
+      .catch(() => {});
+  }
   const navigate = useNavigate();
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -79,7 +90,7 @@ export default function Register() {
       if (res.ok) {
         setDone(true);
       } else {
-        setError(res.message || "রেজিস্ট্রেশন ব্যর্থ হয়েছে, আবার চেষ্টা করুন।");
+        setError(res.message || "নিবন্ধন ব্যর্থ হয়েছে, আবার চেষ্টা করুন।");
       }
     } catch {
       setError("সার্ভারের সাথে সংযোগ করা যায়নি। কিছুক্ষণ পর আবার চেষ্টা করুন।");
@@ -93,10 +104,10 @@ export default function Register() {
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <div className="rounded-2xl border border-[var(--color-greenpen)]/30 bg-[var(--color-greenpen)]/10 p-8">
           <h1 className="font-display text-2xl font-bold text-[var(--color-greenpen)]">
-            রেজিস্ট্রেশন সম্পন্ন হয়েছে!
+            নিবন্ধন সম্পন্ন হয়েছে!
           </h1>
           <p className="mt-3 text-[var(--color-text)]/80">
-            আপনার রেজিস্ট্রেশন এখন <b>পেন্ডিং</b> অবস্থায় আছে। পেমেন্ট যাচাই হলে অ্যাডমিন এটি
+            আপনার নিবন্ধন এখন <b>পেন্ডিং</b> অবস্থায় আছে। পেমেন্ট যাচাই হলে অ্যাডমিন এটি
             কনফার্ম করবেন। স্ট্যাটাস পেজে গিয়ে যেকোনো সময় দেখে নিতে পারবেন।
           </p>
           <button
@@ -112,7 +123,7 @@ export default function Register() {
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
-      <h1 className="font-display text-3xl font-bold text-[var(--color-ink)]">রেজিস্ট্রেশন ফর্ম</h1>
+      <h1 className="font-display text-3xl font-bold text-[var(--color-ink)]">নিবন্ধন ফর্ম</h1>
       <p className="mt-1 text-sm text-[var(--color-text)]/70">
         ধাপ {step} / ২ — {step === 1 ? "শিক্ষার্থীর তথ্য" : "পেমেন্ট নিশ্চিতকরণ"}
       </p>
@@ -191,9 +202,19 @@ export default function Register() {
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="rounded-xl border border-[var(--color-marigold)]/40 bg-[var(--color-marigold)]/10 p-4 text-sm leading-relaxed">
             নিচের বিকাশ নম্বরে{" "}
-            <span className="font-display text-base font-bold text-[var(--color-ink)]">০১৭১০১৭৬৩০১</span>{" "}
+            <span className="inline-flex items-center gap-2 align-middle">
+              <span className="font-display text-base font-bold text-[var(--color-ink)]">01710176301</span>
+              <button
+                type="button"
+                onClick={copyBkashNumber}
+                title="নম্বর কপি করুন"
+                className="rounded-md border border-[var(--color-ink)]/30 bg-white px-2 py-0.5 text-xs font-bold text-[var(--color-ink)] hover:bg-[var(--color-ink)] hover:text-white"
+              >
+                {bkashCopied ? "কপি হয়েছে ✓" : "কপি করুন"}
+              </button>
+            </span>{" "}
             নির্দিষ্ট পরিমাণ টাকা <b>Send Money</b> করুন, তারপর যে নম্বর থেকে টাকা পাঠিয়েছেন
-            সেটি ও ট্রানজেকশন আইডি নিচে লিখে জমা দিন। পেমেন্ট যাচাইয়ের পর রেজিস্ট্রেশন কনফার্ম
+            সেটি ও ট্রানজেকশন আইডি নিচে লিখে জমা দিন। পেমেন্ট যাচাইয়ের পর নিবন্ধন কনফার্ম
             করা হবে।
           </div>
 
@@ -203,12 +224,12 @@ export default function Register() {
               required
               value={form.bkashSender}
               onChange={setPhoneLike("bkashSender")}
-              placeholder="০১XXXXXXXXX"
+              placeholder="01XXXXXXXXX"
               inputMode="numeric"
               maxLength={11}
             />
           </Field>
-          <Field label="ট্রানজেকশন আইডি (Transaction ID)">
+          <Field label="ট্রানজেকশন আইডি (Transaction ID or Trx ID)">
             <input className="input" required value={form.transactionId} onChange={set("transactionId")} placeholder="যেমনঃ 9F7A2XYZ1" />
           </Field>
 
@@ -225,7 +246,7 @@ export default function Register() {
               disabled={submitting}
               className="flex-1 rounded-xl bg-[var(--color-redpen)] px-6 py-3 font-display text-base font-bold text-white transition hover:brightness-110 disabled:opacity-60"
             >
-              {submitting ? "জমা হচ্ছে…" : "রেজিস্ট্রেশন সম্পন্ন করুন"}
+              {submitting ? "জমা হচ্ছে…" : "নিবন্ধন সম্পন্ন করুন"}
             </button>
           </div>
           {submitting && <Loader label="তথ্য জমা হচ্ছে…" />}
