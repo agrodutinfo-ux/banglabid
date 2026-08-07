@@ -80,9 +80,16 @@ function setup() {
     settingsSheet.appendRow(["maintenanceMode", "FALSE"]);
     settingsSheet.appendRow(["liveExamStart", ""]);
     settingsSheet.appendRow(["liveExamEnd", ""]);
+    settingsSheet.appendRow(["logoUrl", ""]);
+    settingsSheet.appendRow(["offlineMcqLastUsed", "[]"]);
+    settingsSheet.appendRow(["offlineWrittenLastUsed", "[]"]);
+    settingsSheet.appendRow(["offlineSpellingLastUsed", "[]"]);
     settingsSheet.setFrozenRows(1);
   } else {
-    ensureSettingsKeys_(settingsSheet, ["liveExamStart", "liveExamEnd"]);
+    ensureSettingsKeys_(settingsSheet, [
+      "liveExamStart", "liveExamEnd", "logoUrl",
+      "offlineMcqLastUsed", "offlineWrittenLastUsed", "offlineSpellingLastUsed",
+    ]);
   }
 
   let adminsSheet = ss.getSheetByName("Admins");
@@ -722,6 +729,17 @@ function gradeWrittenAttempt_(id, score, annotatedImageUrl, adminComment) {
   return true;
 }
 
+/** একটা পুরো গ্রুপ (একই ছবির সাথে যুক্ত সবগুলো প্রশ্ন — যেমন একটা উদ্দীপকের
+ *  সবকটা প্রশ্ন, বা বানানের সবকটা শব্দ) একসাথে মূল্যায়ন করে — প্রতিটার নম্বর
+ *  আলাদা, কিন্তু দাগানো ছবি ও মন্তব্য সবগুলোর জন্য একই। */
+function gradeWrittenAttemptsBatch_(items, annotatedImageUrl, adminComment) {
+  let count = 0;
+  items.forEach((item) => {
+    if (gradeWrittenAttempt_(item.id, item.score, annotatedImageUrl, adminComment)) count++;
+  });
+  return count;
+}
+
 /* ---------------- র‍্যাঙ্কিং / মেরিট তালিকা ---------------- */
 
 function getLeaderboard_(examType) {
@@ -753,6 +771,198 @@ function getLeaderboard_(examType) {
         total: a.total,
       };
     });
+}
+
+/* ---------------- অফলাইন পরীক্ষার প্রশ্নপত্র (PDF) ---------------- */
+
+/** Settings শিটে ছোট একটা JSON তালিকা হিসেবে "গত বার অফলাইনে কোন প্রশ্নগুলো
+ *  ব্যবহার হয়েছিল" সংরক্ষণ করা হয় — যাতে পরের বার জেনারেট করলে যতটা সম্ভব
+ *  ভিন্ন প্রশ্ন আসে (সম্পূর্ণ রিপিটেশন-মুক্ত না, কিন্তু ঝুঁকি অনেক কমে)। */
+function getRecentlyUsedIds_(key) {
+  const settings = getSettingsObj_();
+  try {
+    return new Set(JSON.parse(settings[key] || "[]"));
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function saveRecentlyUsedIds_(key, ids) {
+  setSettingsObj_({ [key]: JSON.stringify(ids) });
+}
+
+/** সেটিংসে logoUrl দেওয়া থাকলে সেটা ফেচ করার চেষ্টা করে — ব্যর্থ হলে null
+ *  ফেরত দেয়, পিডিএফ তখন লোগো ছাড়াই শুধু লেখা দিয়ে হেডার বানায়। */
+function fetchLogoBlob_() {
+  try {
+    const settings = getSettingsObj_();
+    if (!settings.logoUrl) return null;
+    const res = UrlFetchApp.fetch(settings.logoUrl, { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return null;
+    return res.getBlob();
+  } catch (e) {
+    return null;
+  }
+}
+
+function addPdfHeader_(body, title, subtitle) {
+  const logo = fetchLogoBlob_();
+  if (logo) {
+    try {
+      const img = body.appendImage(logo);
+      img.setWidth(60);
+      img.setHeight(60);
+    } catch (e) {
+      // লোগো বসাতে সমস্যা হলেও বাকি ডকুমেন্ট চলতে থাকবে
+    }
+  }
+  body.appendParagraph("অগ্রদূত পরীক্ষা কেন্দ্র").setHeading(DocumentApp.ParagraphHeading.HEADING1).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  body.appendParagraph(title).setHeading(DocumentApp.ParagraphHeading.HEADING2).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  body.appendParagraph(subtitle).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  body.appendHorizontalRule();
+}
+
+/** সাধারণ HTML (আমাদের রিচ-টেক্সট এডিটর থেকে আসা) থেকে সাদামাটা প্লেইন টেক্সট
+ *  বের করে, লাইন ব্রেক ঠিক রেখে — Google Docs-এ রঙ/বোল্ড ফরম্যাটিং হুবহু
+ *  বসানো এই মুহূর্তে সাপোর্ট করা হয়নি, শুধু টেক্সট ও লাইন ব্রেক ঠিক থাকে। */
+function htmlToPlainLines_(html) {
+  if (!html) return [];
+  let text = String(html)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+  return text.split("\n").map((l) => l.trim()).filter((l, i, arr) => l !== "" || (i > 0 && arr[i - 1] !== ""));
+}
+
+function docToBase64Pdf_(doc) {
+  doc.saveAndClose();
+  const file = DriveApp.getFileById(doc.getId());
+  const pdfBlob = file.getAs(MimeType.PDF);
+  const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+  file.setTrashed(true); // অস্থায়ী Google Doc রাখার দরকার নেই, PDF হয়ে গেলে মুছে ফেলা হয়
+  return base64;
+}
+
+/** অফলাইন MCQ প্রশ্নপত্র — ৪০টা প্রশ্ন (একই ৫০/৩৫% বণ্টন মেনে), শেষ পাতায়
+ *  উত্তরমালা। */
+function buildOfflineMcqPdf_() {
+  const all = sheetToObjects_(getSheet_("Questions")).filter((q) => q.forMock);
+  const recentlyUsed = getRecentlyUsedIds_("offlineMcqLastUsed");
+  const pool = pickAvoidingRepeats_dedupe_(all);
+  const picked = pickAvoidingRepeats_(pool, 40, recentlyUsed, "_row");
+  const shuffled = shuffleArray_(picked);
+
+  const doc = DocumentApp.create("Offline MCQ - " + new Date().toISOString());
+  const body = doc.getBody();
+  addPdfHeader_(body, "বহুনির্বাচনী প্রশ্ন", "প্রশ্ন সংখ্যা: ৪০টি · সময়: ৪০ মিনিট");
+  body.appendParagraph(" ");
+
+  const LETTERS = ["ক", "খ", "গ", "ঘ"];
+  const answerKey = [];
+
+  shuffled.forEach((q, i) => {
+    const options = shuffleArray_(["A", "B", "C", "D"].map((k) => q["option" + k]));
+    const correctText = correctTextForQuestion_(q);
+    const correctIdx = options.indexOf(correctText);
+    answerKey.push(LETTERS[correctIdx]);
+
+    body.appendParagraph(`${i + 1}. ${q.question}`).setSpacingBefore(6);
+    options.forEach((opt, oi) => {
+      body.appendParagraph(`   ${LETTERS[oi]}) ${opt}`);
+    });
+  });
+
+  body.appendPageBreak();
+  body.appendParagraph("উত্তরমালা").setHeading(DocumentApp.ParagraphHeading.HEADING2).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  const answerLines = [];
+  for (let i = 0; i < answerKey.length; i += 5) {
+    answerLines.push(
+      answerKey
+        .slice(i, i + 5)
+        .map((ans, j) => `${i + j + 1}) ${ans}`)
+        .join("      ")
+    );
+  }
+  answerLines.forEach((line) => body.appendParagraph(line));
+
+  saveRecentlyUsedIds_("offlineMcqLastUsed", shuffled.map((q) => q._row));
+  return { base64: docToBase64Pdf_(doc), filename: "Agrodut-MCQ-" + Date.now() + ".pdf" };
+}
+
+// পুল-এ একই লেখার প্রশ্ন দুইবার না থাকুক
+function pickAvoidingRepeats_dedupe_(all) {
+  const seen = new Set();
+  return all.filter((q) => {
+    const key = String(q.question || "").trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** অফলাইন অনুধাবনমূলক প্রশ্নপত্র — ৩টা সেট, প্রতিটা আলাদা পাতায়, প্রতিটার
+ *  নিচে উত্তর লেখার জায়গা। */
+function buildOfflineWrittenPdf_() {
+  const all = parsedWrittenQuestions_().filter((q) => q.status === "published" && q.forMock && q.kind === "written");
+  const recentlyUsed = getRecentlyUsedIds_("offlineWrittenLastUsed");
+  const picked = pickAvoidingRepeats_(all, 3, recentlyUsed, "id");
+
+  const doc = DocumentApp.create("Offline Written - " + new Date().toISOString());
+  const body = doc.getBody();
+
+  picked.forEach((set, si) => {
+    if (si > 0) body.appendPageBreak();
+    addPdfHeader_(body, "অনুধাবনমূলক প্রশ্নের উত্তর", "সময়: ৩০ মিনিট");
+    body.appendParagraph(" ");
+
+    htmlToPlainLines_(set.passageHtml).forEach((line) => {
+      body.appendParagraph(line).setItalic(true);
+    });
+    body.appendParagraph(" ");
+
+    (set.subQuestions || []).forEach((sq, qi) => {
+      htmlToPlainLines_(sq.text).forEach((line, li) => {
+        body.appendParagraph((li === 0 ? `${qi + 1}. ` : "    ") + line + (li === 0 ? ` (${sq.points} নম্বর)` : ""));
+      });
+      // উত্তর লেখার জন্য কিছু ফাঁকা লাইন
+      for (let i = 0; i < 3; i++) body.appendParagraph("_______________________________________________");
+      body.appendParagraph(" ");
+    });
+  });
+
+  saveRecentlyUsedIds_("offlineWrittenLastUsed", picked.map((q) => q.id));
+  return { base64: docToBase64Pdf_(doc), filename: "Agrodut-Onudhabonmulok-" + Date.now() + ".pdf" };
+}
+
+/** অফলাইন বানান প্রতিযোগিতার প্রশ্নপত্র — ৫টা বানান একই পাতায়, প্রতিটার
+ *  নিচে উত্তর লেখার জায়গা। */
+function buildOfflineSpellingPdf_() {
+  const all = parsedWrittenQuestions_().filter((q) => q.status === "published" && q.forMock && q.kind === "spelling");
+  const flatItems = [];
+  all.forEach((q) => {
+    (q.subQuestions || []).forEach((sq) => {
+      flatItems.push({ id: sq.id, text: sq.text, points: sq.points });
+    });
+  });
+  const recentlyUsed = getRecentlyUsedIds_("offlineSpellingLastUsed");
+  const picked = pickAvoidingRepeats_(flatItems, 5, recentlyUsed, "id");
+
+  const doc = DocumentApp.create("Offline Spelling - " + new Date().toISOString());
+  const body = doc.getBody();
+  addPdfHeader_(body, "বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা", "প্রশ্ন সংখ্যা: ৫টি · সময়: ২০ মিনিট");
+  body.appendParagraph(" ");
+
+  picked.forEach((sq, i) => {
+    body.appendParagraph(`${i + 1}. ${sq.text}   (${sq.points} নম্বর)`).setSpacingBefore(10);
+    body.appendParagraph("উত্তরঃ _______________________________________________");
+  });
+
+  saveRecentlyUsedIds_("offlineSpellingLastUsed", picked.map((sq) => sq.id));
+  return { base64: docToBase64Pdf_(doc), filename: "Agrodut-Banan-" + Date.now() + ".pdf" };
 }
 
 /* ---------------- HTTP entry points ---------------- */
@@ -1131,11 +1341,51 @@ function doPost(e) {
         return jsonOut_({ ok: true });
       }
 
+      case "adminGradeWrittenBatch": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        if (!body.items || body.items.length === 0) return jsonOut_({ ok: false, message: "কোনো আইটেম পাওয়া যায়নি" });
+        let annotatedImageUrl = "";
+        if (body.annotatedImageBase64) {
+          annotatedImageUrl = uploadImageToDrive_(body.annotatedImageBase64, "image/jpeg", "graded_" + Utilities.getUuid() + ".jpg");
+        }
+        const count = gradeWrittenAttemptsBatch_(body.items, annotatedImageUrl, body.adminComment);
+        return jsonOut_({ ok: true, data: { count } });
+      }
+
       /* ---------- অ্যাডমিন: লাইভ ফলাফল ---------- */
 
       case "adminLiveResults": {
         if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
         return jsonOut_({ ok: true, data: getLeaderboard_("live") });
+      }
+
+      /* ---------- অ্যাডমিন: অফলাইন প্রশ্নপত্র (PDF) ---------- */
+
+      case "adminGenerateOfflineMcq": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        try {
+          return jsonOut_({ ok: true, data: buildOfflineMcqPdf_() });
+        } catch (err) {
+          return jsonOut_({ ok: false, message: "PDF তৈরি করা যায়নি: " + String(err) });
+        }
+      }
+
+      case "adminGenerateOfflineWritten": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        try {
+          return jsonOut_({ ok: true, data: buildOfflineWrittenPdf_() });
+        } catch (err) {
+          return jsonOut_({ ok: false, message: "PDF তৈরি করা যায়নি: " + String(err) });
+        }
+      }
+
+      case "adminGenerateOfflineSpelling": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        try {
+          return jsonOut_({ ok: true, data: buildOfflineSpellingPdf_() });
+        } catch (err) {
+          return jsonOut_({ ok: false, message: "PDF তৈরি করা যায়নি: " + String(err) });
+        }
       }
 
       default:

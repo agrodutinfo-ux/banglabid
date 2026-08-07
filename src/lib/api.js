@@ -67,5 +67,9 @@ export const api = {
   adminDeleteWrittenQuestion: (token, id) => callApi("adminDeleteWrittenQuestion", { token, id }),
   adminListPendingWritten: (token) => callApi("adminListPendingWritten", { token }),
   adminGradeWritten: (token, payload) => callApi("adminGradeWritten", { token, ...payload }),
+  adminGradeWrittenBatch: (token, payload) => callApi("adminGradeWrittenBatch", { token, ...payload }),
   adminLiveResults: (token) => callApi("adminLiveResults", { token }),
+  adminGenerateOfflineMcq: (token) => callApi("adminGenerateOfflineMcq", { token }),
+  adminGenerateOfflineWritten: (token) => callApi("adminGenerateOfflineWritten", { token }),
+  adminGenerateOfflineSpelling: (token) => callApi("adminGenerateOfflineSpelling", { token }),
 };

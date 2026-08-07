@@ -44,6 +44,7 @@ export default function AdminDashboard() {
             ["grading", "খাতা মূল্যায়ন"],
             ["notices", "নোটিশ"],
             ["liveResults", "লাইভ ফলাফল"],
+            ["offline", "অফলাইন প্রশ্নপত্র"],
             ["settings", "সেটিংস"],
           ].map(([key, label]) => (
             <button
@@ -65,6 +66,7 @@ export default function AdminDashboard() {
           {tab === "grading" && <Grading token={token} />}
           {tab === "notices" && <Notices token={token} />}
           {tab === "liveResults" && <LiveResults token={token} />}
+          {tab === "offline" && <OfflineExams token={token} />}
           {tab === "settings" && <Settings token={token} />}
         </div>
       </div>
@@ -209,6 +211,14 @@ function Settings({ token }) {
           Google Drive: ছবিতে রাইট-ক্লিক → Share → "Anyone with the link" সিলেক্ট করে লিংক কপি করুন
           (শেয়ার লিংক দিলেই চলবে, বিশেষ ফরম্যাটে বদলাতে হবে না)। Imgur: ছবি আপলোডের পর যে লিংক
           পাবেন সেটাই দিন।
+        </span>
+      </Field>
+      <Field label="অগ্রদূত লোগোর সরাসরি URL (অফলাইন প্রশ্নপত্রের হেডারে ব্যবহার হবে, ঐচ্ছিক)">
+        <input className="input" value={form.logoUrl || ""} onChange={set("logoUrl")} placeholder="https://..." />
+        <span className="mt-1 block text-xs text-[var(--color-text)]/60">
+          লাইভ সাইটের `/images/agrodut-logo.png` লিংকটা এখানে দিতে পারেন (যেমনঃ
+          https://banglabid.netlify.app/images/agrodut-logo.png)। ফাঁকা রাখলে PDF-এ লোগো
+          ছাড়াই শুধু লেখা দিয়ে হেডার হবে।
         </span>
       </Field>
       <label className="flex items-center gap-2 text-sm font-semibold text-[var(--color-ink)]">
@@ -774,10 +784,20 @@ function WrittenQuestions({ token }) {
 const KIND_LABEL_ADMIN = { written: "অনুধাবনমূলক", spelling: "বানান প্রতিযোগিতা" };
 const EXAM_TYPE_LABEL_ADMIN = { mock: "মক", live: "লাইভ" };
 
+function groupPendingWritten_(list) {
+  const groups = {};
+  list.forEach((item) => {
+    const key = `${item.sessionId}|${item.writtenQuestionId}`;
+    if (!groups[key]) groups[key] = { key, imageUrl: item.imageUrl, kind: item.kind, examType: item.examType, items: [] };
+    groups[key].items.push(item);
+  });
+  return Object.values(groups);
+}
+
 function Grading({ token }) {
   const [list, setList] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [score, setScore] = useState("");
+  const [selected, setSelected] = useState(null); // একটা গ্রুপ (একই ছবির সব প্রশ্ন)
+  const [scores, setScores] = useState({}); // { [attemptId]: score }
   const [comment, setComment] = useState("");
   const [annotated, setAnnotated] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -789,19 +809,21 @@ function Grading({ token }) {
 
   useEffect(load, [token]);
 
-  function openItem(item) {
-    setSelected(item);
-    setScore("");
+  function openGroup(group) {
+    setSelected(group);
+    setScores({});
     setComment("");
     setAnnotated(null);
   }
 
   async function save() {
-    if (!score) return;
+    const items = selected.items
+      .filter((it) => scores[it.id] !== undefined && scores[it.id] !== "")
+      .map((it) => ({ id: it.id, score: Number(scores[it.id]) }));
+    if (items.length === 0) return;
     setSaving(true);
-    await api.adminGradeWritten(token, {
-      id: selected.id,
-      score: Number(score),
+    await api.adminGradeWrittenBatch(token, {
+      items,
       annotatedImageBase64: annotated,
       adminComment: comment,
     });
@@ -811,51 +833,70 @@ function Grading({ token }) {
   }
 
   if (selected) {
+    const allFilled = selected.items.every((it) => scores[it.id] !== undefined && scores[it.id] !== "");
     return (
       <div className="max-w-2xl">
-        <button onClick={() => setSelected(null)} className="mb-3 text-sm font-bold text-[var(--color-bluepen)] underline">← তালিকায় ফিরুন</button>
-        <div className="mb-2 text-sm font-semibold text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: selected.subQuestionText }} />
+        <button onClick={() => setSelected(null)} className="mb-3 text-sm font-bold text-[var(--color-bluepen)] underline">
+          ← তালিকায় ফিরুন
+        </button>
+
         <GradingCanvas imageUrl={selected.imageUrl} onExport={setAnnotated} />
-        {annotated && <p className="mt-2 text-xs text-[var(--color-greenpen)]">মার্কিং প্রস্তুত ✓ — নিচে নম্বর দিয়ে সাবমিট করুন।</p>}
+        {annotated && <p className="mt-2 text-xs text-[var(--color-greenpen)]">মার্কিং প্রস্তুত ✓ — নিচে প্রতিটার নম্বর দিয়ে সাবমিট করুন।</p>}
+
         <div className="mt-4 space-y-3 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
-          <Field label={`নম্বর (সর্বোচ্চ ${selected.points})`}>
-            <input className="input" type="number" max={selected.points} value={score} onChange={(e) => setScore(e.target.value)} />
-          </Field>
-          <Field label="মন্তব্য (ঐচ্ছিক)">
+          <p className="text-sm font-bold text-[var(--color-ink)]">
+            এই খাতায় {selected.items.length}টি প্রশ্ন — প্রতিটার নম্বর আলাদাভাবে দিন
+          </p>
+          {selected.items.map((it, i) => (
+            <div key={it.id} className="rounded-lg bg-[var(--color-paper)] p-3">
+              <div className="text-xs font-semibold text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: `${i + 1}. ${it.subQuestionText}` }} />
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-xs text-[var(--color-text)]/70">নম্বর (সর্বোচ্চ {it.points}):</label>
+                <input
+                  className="input w-24"
+                  type="number"
+                  max={it.points}
+                  value={scores[it.id] ?? ""}
+                  onChange={(e) => setScores((s) => ({ ...s, [it.id]: e.target.value }))}
+                />
+              </div>
+            </div>
+          ))}
+
+          <Field label="সামগ্রিক মন্তব্য (ঐচ্ছিক, সবগুলোর জন্য একই থাকবে)">
             <textarea className="input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
           </Field>
+
           <button
-            disabled={saving || !score}
+            disabled={saving || !allFilled}
             onClick={save}
             className="w-full rounded-xl bg-[var(--color-ink)] px-6 py-3 font-display font-bold text-white disabled:opacity-60"
           >
-            {saving ? "সেভ হচ্ছে…" : "মূল্যায়ন সেভ করুন"}
+            {saving ? "সেভ হচ্ছে…" : `সবগুলো (${selected.items.length}টি) মূল্যায়ন সেভ করুন`}
           </button>
         </div>
       </div>
     );
   }
 
+  const groups = list ? groupPendingWritten_(list) : [];
+
   return (
     <div>
       <h3 className="font-display text-lg font-bold text-[var(--color-ink)]">
-        মূল্যায়নের অপেক্ষায় {list ? `(${list.length}টি)` : ""}
+        মূল্যায়নের অপেক্ষায় {list ? `(${groups.length}টি খাতা)` : ""}
       </h3>
       {list === null ? (
         <Loader label="লোড হচ্ছে…" />
       ) : (
         <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-          {list.length === 0 && <p className="text-sm text-[var(--color-text)]/60">এখন মূল্যায়নের অপেক্ষায় কিছু নেই।</p>}
-          {list.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => openItem(item)}
-              className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 p-2 text-left"
-            >
-              <img src={item.imageUrl} alt="উত্তরপত্র" className="h-32 w-full rounded-md object-cover" />
-              <div className="mt-1 line-clamp-2 text-xs font-semibold text-[var(--color-ink)]" dangerouslySetInnerHTML={{ __html: item.subQuestionText }} />
+          {groups.length === 0 && <p className="text-sm text-[var(--color-text)]/60">এখন মূল্যায়নের অপেক্ষায় কিছু নেই।</p>}
+          {groups.map((g) => (
+            <button key={g.key} onClick={() => openGroup(g)} className="rounded-lg border border-[var(--color-paper-line)] bg-white/70 p-2 text-left">
+              <img src={g.imageUrl} alt="উত্তরপত্র" className="h-32 w-full rounded-md object-cover" />
+              <p className="mt-1 text-xs font-semibold text-[var(--color-ink)]">{g.items.length}টি প্রশ্নের উত্তর</p>
               <p className="text-xs text-[var(--color-text)]/60">
-                {KIND_LABEL_ADMIN[item.kind] || item.kind} · {EXAM_TYPE_LABEL_ADMIN[item.examType] || item.examType} · {item.points} নম্বর
+                {KIND_LABEL_ADMIN[g.kind] || g.kind} · {EXAM_TYPE_LABEL_ADMIN[g.examType] || g.examType}
               </p>
             </button>
           ))}
@@ -907,6 +948,92 @@ function LiveResults({ token }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function downloadBase64Pdf_(base64, filename) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "question-paper.pdf";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function OfflineExams({ token }) {
+  const [loadingKey, setLoadingKey] = useState(null);
+  const [error, setError] = useState("");
+
+  async function generate(key, apiCall) {
+    setError("");
+    setLoadingKey(key);
+    try {
+      const res = await apiCall(token);
+      if (res.ok) {
+        downloadBase64Pdf_(res.data.base64, res.data.filename);
+      } else {
+        setError(res.message || "PDF তৈরি করা যায়নি।");
+      }
+    } catch {
+      setError("সার্ভারের সাথে সংযোগ করা যায়নি।");
+    } finally {
+      setLoadingKey(null);
+    }
+  }
+
+  const items = [
+    {
+      key: "mcq",
+      title: "এমসিকিউ প্রশ্নপত্র",
+      desc: "৪০টি প্রশ্ন (৫০% সাহিত্য/৫০% ব্যাকরণ, ব্যাকরণের ৩৫% বানান), সময় ৪০ মিনিট — শেষ পাতায় উত্তরমালা।",
+      call: api.adminGenerateOfflineMcq,
+    },
+    {
+      key: "written",
+      title: "অনুধাবনমূলক প্রশ্নপত্র",
+      desc: "৩টা সেট, প্রতিটা আলাদা পাতায়, নিচে উত্তর লেখার জায়গাসহ, সময় ৩০ মিনিট।",
+      call: api.adminGenerateOfflineWritten,
+    },
+    {
+      key: "spelling",
+      title: "বানান প্রতিযোগিতার প্রশ্নপত্র",
+      desc: "৫টা বানান একই পাতায়, প্রতিটার নিচে উত্তর লেখার জায়গাসহ, সময় ২০ মিনিট।",
+      call: api.adminGenerateOfflineSpelling,
+    },
+  ];
+
+  return (
+    <div className="max-w-2xl">
+      <p className="mb-4 text-sm text-[var(--color-text)]/70">
+        অফলাইনে পরীক্ষা নেওয়ার জন্য প্রিন্টযোগ্য (A4) প্রশ্নপত্র তৈরি করুন। প্রতিবার জেনারেট করলে
+        যতটা সম্ভব ভিন্ন প্রশ্ন আসার চেষ্টা করা হয় (সম্পূর্ণ রিপিটেশন-মুক্ত নিশ্চয়তা না, তবে ব্যাংকে
+        যথেষ্ট প্রশ্ন থাকলে পুনরাবৃত্তি কম হবে)।
+      </p>
+      {error && <p className="mb-4 rounded-lg bg-[var(--color-redpen)]/10 px-4 py-2 text-sm text-[var(--color-redpen)]">{error}</p>}
+      <div className="space-y-3">
+        {items.map((it) => (
+          <div key={it.key} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-paper-line)] bg-white/70 p-4">
+            <div>
+              <p className="font-display font-bold text-[var(--color-ink)]">{it.title}</p>
+              <p className="text-xs text-[var(--color-text)]/60">{it.desc}</p>
+            </div>
+            <button
+              disabled={loadingKey === it.key}
+              onClick={() => generate(it.key, it.call)}
+              className="shrink-0 rounded-xl bg-[var(--color-ink)] px-4 py-2 font-display text-sm font-bold text-white disabled:opacity-60"
+            >
+              {loadingKey === it.key ? "তৈরি হচ্ছে…" : "PDF ডাউনলোড"}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
