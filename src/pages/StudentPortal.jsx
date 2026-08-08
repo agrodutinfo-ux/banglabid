@@ -63,7 +63,7 @@ export default function StudentPortal() {
       <div className="mx-auto max-w-3xl px-4 py-6">
         {!confirmed && (
           <div className="mb-6 rounded-xl border border-[var(--color-marigold)]/40 bg-[var(--color-marigold)]/10 p-4 text-sm text-[var(--color-marigold-dark)]">
-            আপনার নিবন্ধন এখনও কনফার্ম হয়নি ({profile.status === "rejected" ? "রিজেক্টেড" : "পেন্ডিং"})।
+            আপনার রেজিস্ট্রেশন এখনও কনফার্ম হয়নি ({profile.status === "rejected" ? "রিজেক্টেড" : "পেন্ডিং"})।
             কনফার্ম হওয়ার পর পরীক্ষা দিতে পারবেন।
           </div>
         )}
@@ -81,17 +81,17 @@ export default function StudentPortal() {
 
         <h2 className="font-display font-bold text-[var(--color-ink)]">পরীক্ষা কেন্দ্র</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-          <ExamCard title="বহুনির্বাচনি মক টেস্ট" enabled={confirmed} to="/exam/mcq" />
+          <ExamCard title="এমসিকিউ মক টেস্ট" enabled={confirmed} to="/exam/mcq" />
           <ExamCard title="অনুধাবনমূলক পরীক্ষা" enabled={confirmed} to="/exam/written" />
           <ExamCard title="বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা" enabled={confirmed} to="/exam/spelling" />
           <ExamCard title="লাইভ পরীক্ষা" enabled={confirmed} to="/exam/live" />
         </div>
 
-        <h2 className="mt-8 font-display font-bold text-[var(--color-ink)]">বহুনির্বাচনি ফলাফল</h2>
+        <h2 className="mt-8 font-display font-bold text-[var(--color-ink)]">এমসিকিউ ফলাফল</h2>
         <div className="mt-3 space-y-2">
           {attempts === null && <Loader label="ফলাফল লোড হচ্ছে…" />}
           {attempts && attempts.length === 0 && (
-            <p className="text-sm text-[var(--color-text)]/60">এখনো কোনো বহুনির্বাচনি পরীক্ষা দেননি।</p>
+            <p className="text-sm text-[var(--color-text)]/60">এখনো কোনো এমসিকিউ পরীক্ষা দেননি।</p>
           )}
           {attempts &&
             attempts.map((a) => (
@@ -167,19 +167,29 @@ function WrittenResultsList({ sessions }) {
             </button>
 
             {isOpen && (
-              <div className="space-y-2 border-t border-[var(--color-paper-line)] p-3">
-                {session.items.map((item) => (
-                  <div key={item.id} className="rounded-md bg-[var(--color-paper)] p-2">
-                    <div className="text-xs text-[var(--color-text)]/70" dangerouslySetInnerHTML={{ __html: item.subQuestionText }} />
-                    {item.status === "graded" ? (
-                      <>
-                        <p className="mt-1 text-xs font-bold text-[var(--color-ink)]">নম্বর: {item.score}/{item.points}</p>
-                        {item.adminComment && <p className="mt-1 text-xs text-[var(--color-bluepen)]">মন্তব্য: {item.adminComment}</p>}
-                        <img src={item.annotatedImageUrl || item.imageUrl} alt="মূল্যায়িত খাতা" className="mt-2 max-h-48 rounded-md border border-[var(--color-paper-line)]" />
-                      </>
-                    ) : (
-                      <p className="mt-1 text-xs font-semibold text-[var(--color-marigold-dark)]">মূল্যায়নের অপেক্ষায়</p>
-                    )}
+              <div className="space-y-3 border-t border-[var(--color-paper-line)] p-3">
+                {groupByImage_(session.items).map((group) => (
+                  <div key={group.imageUrl} className="rounded-md bg-[var(--color-paper)] p-2">
+                    <img
+                      src={group.items[0].annotatedImageUrl || group.imageUrl}
+                      alt="উত্তরপত্র"
+                      className="mb-2 max-h-56 rounded-md border border-[var(--color-paper-line)]"
+                    />
+                    <div className="space-y-2">
+                      {group.items.map((item) => (
+                        <div key={item.id} className="border-t border-dashed border-[var(--color-paper-line)] pt-2 first:border-t-0 first:pt-0">
+                          <div className="text-xs text-[var(--color-text)]/70" dangerouslySetInnerHTML={{ __html: item.subQuestionText }} />
+                          {item.status === "graded" ? (
+                            <>
+                              <p className="mt-1 text-xs font-bold text-[var(--color-ink)]">নম্বর: {item.score}/{item.points}</p>
+                              {item.adminComment && <p className="mt-1 text-xs text-[var(--color-bluepen)]">মন্তব্য: {item.adminComment}</p>}
+                            </>
+                          ) : (
+                            <p className="mt-1 text-xs font-semibold text-[var(--color-marigold-dark)]">মূল্যায়নের অপেক্ষায়</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -189,6 +199,15 @@ function WrittenResultsList({ sessions }) {
       })}
     </>
   );
+}
+
+function groupByImage_(items) {
+  const groups = {};
+  items.forEach((item) => {
+    if (!groups[item.imageUrl]) groups[item.imageUrl] = { imageUrl: item.imageUrl, items: [] };
+    groups[item.imageUrl].items.push(item);
+  });
+  return Object.values(groups);
 }
 
 function ExamCard({ title, enabled, to }) {

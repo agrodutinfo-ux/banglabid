@@ -144,6 +144,25 @@ function ensureHeaders_(sheet, headers) {
   });
 }
 
+/**
+ * নতুন সারি যোগ করার সময় ডেটা সবসময় হেডারের *আসল নাম* দেখে সঠিক কলামে বসায় —
+ * কোনো কলামের অবস্থান কোডে যেভাবে লেখা আছে সেই অনুমানের উপর নির্ভর করে না।
+ *
+ * কেন এটা জরুরিঃ ensureHeaders_() নতুন কলাম সবসময় শিটের *শেষে* যোগ করে, কিন্তু
+ * কোডের হেডার-তালিকায় (যেমন WRITTEN_ATTEMPT_HEADERS) নতুন ফিল্ড মাঝখানে যোগ
+ * হলে (যেমন "kind" আগে "sessionId"-এর ঠিক আগে বসানো হয়েছিল, শেষে না), তখন
+ * appendRow([...fixed order...]) ভুল কলামে ডেটা বসিয়ে দিতে পারে — যেটা
+ * "স্টুডেন্ট এক প্রশ্নের উত্তর দিয়েছে কিন্তু এডমিন প্যানেলে অন্য প্রশ্ন
+ * দেখাচ্ছে" এই বাগের মূল কারণ ছিল। এই ফাংশনটা সবসময় শিটের *বর্তমান* হেডার
+ * সারি পড়ে, নামের সাথে মিলিয়ে বসায় — তাই ভবিষ্যতে হেডার-অর্ডার যেভাবেই
+ * বদলাক না কেন এই সমস্যা আর হবে না।
+ */
+function appendRowByHeaders_(sheet, dataObject) {
+  const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const row = headerRow.map((h) => (Object.prototype.hasOwnProperty.call(dataObject, h) ? dataObject[h] : ""));
+  sheet.appendRow(row);
+}
+
 /** পুরনো Settings শিটে নতুন কোনো key না থাকলে সেটা খালি মান দিয়ে যোগ করে দেয়। */
 function ensureSettingsKeys_(sheet, keys) {
   const rows = sheet.getDataRange().getValues();
@@ -286,22 +305,22 @@ function registerStudent_(data) {
   forceTextColumn_(sheet, REGISTRATION_HEADERS.indexOf("phone") + 1);
   forceTextColumn_(sheet, REGISTRATION_HEADERS.indexOf("bkashSender") + 1);
   forceTextColumn_(sheet, REGISTRATION_HEADERS.indexOf("transactionId") + 1);
-  sheet.appendRow([
+  appendRowByHeaders_(sheet, {
     id,
-    data.name,
-    data.className,
-    data.school,
-    data.division,
-    normalizePhone_(data.phone),
-    data.email,
-    data.password,
-    normalizePhone_(data.bkashSender),
-    data.transactionId,
-    "pending",
-    "",
-    new Date(),
-    "",
-  ]);
+    name: data.name,
+    className: data.className,
+    school: data.school,
+    division: data.division,
+    phone: normalizePhone_(data.phone),
+    email: data.email,
+    password: data.password,
+    bkashSender: normalizePhone_(data.bkashSender),
+    transactionId: data.transactionId,
+    status: "pending",
+    note: "",
+    createdAt: new Date(),
+    studentToken: "",
+  });
   return id;
 }
 
@@ -352,7 +371,7 @@ function findRegistrationByStudentToken_(token) {
 function addNotice_(message) {
   const sheet = getSheet_("Notices");
   const id = Utilities.getUuid();
-  sheet.appendRow([id, message, true, new Date()]);
+  appendRowByHeaders_(sheet, { id, message, active: true, createdAt: new Date() });
   return id;
 }
 
@@ -378,21 +397,21 @@ function shuffleArray_(arr) {
 function addQuestion_(q) {
   const sheet = getSheet_("Questions");
   const id = Utilities.getUuid();
-  sheet.appendRow([
+  appendRowByHeaders_(sheet, {
     id,
-    q.question,
-    q.optionA,
-    q.optionB,
-    q.optionC,
-    q.optionD,
-    q.correctOption, // "A" | "B" | "C" | "D"
-    q.explanation || "",
-    q.forMock !== false,
-    !!q.forLive,
-    new Date(),
-    q.category || "",       // "সাহিত্য" | "ব্যাকরণ"
-    q.subCategory || "",    // "বানান" | "অন্যান্য" (শুধু ব্যাকরণের জন্য প্রযোজ্য)
-  ]);
+    question: q.question,
+    optionA: q.optionA,
+    optionB: q.optionB,
+    optionC: q.optionC,
+    optionD: q.optionD,
+    correctOption: q.correctOption, // "A" | "B" | "C" | "D"
+    explanation: q.explanation || "",
+    forMock: q.forMock !== false,
+    forLive: !!q.forLive,
+    createdAt: new Date(),
+    category: q.category || "",       // "সাহিত্য" | "ব্যাকরণ"
+    subCategory: q.subCategory || "", // "বানান" | "অন্যান্য" (শুধু ব্যাকরণের জন্য প্রযোজ্য)
+  });
   return id;
 }
 
@@ -574,16 +593,16 @@ function addWrittenQuestion_(q) {
     text: sq.text,
     points: sq.points || 10,
   }));
-  sheet.appendRow([
+  appendRowByHeaders_(sheet, {
     id,
-    q.passageHtml || "",
-    JSON.stringify(subQuestions),
-    q.kind || "written",
-    q.status === "published" ? "published" : "draft",
-    q.forMock !== false,
-    !!q.forLive,
-    new Date(),
-  ]);
+    passageHtml: q.passageHtml || "",
+    questionsJson: JSON.stringify(subQuestions),
+    kind: q.kind || "written",
+    status: q.status === "published" ? "published" : "draft",
+    forMock: q.forMock !== false,
+    forLive: !!q.forLive,
+    createdAt: new Date(),
+  });
   return id;
 }
 
@@ -690,11 +709,26 @@ function uploadImageToDrive_(base64Data, mimeType, filename) {
 function saveWrittenAttempt_(data) {
   const sheet = getSheet_("WrittenAttempts");
   const id = Utilities.getUuid();
-  sheet.appendRow([
-    id, data.registrationId, data.phone, data.email, data.examType, data.kind, data.sessionId,
-    data.writtenQuestionId, data.subQuestionId, data.subQuestionText, data.points, data.imageUrl,
-    "pending", "", "", "", new Date(), "",
-  ]);
+  appendRowByHeaders_(sheet, {
+    id,
+    registrationId: data.registrationId || "",
+    phone: data.phone,
+    email: data.email,
+    examType: data.examType,
+    kind: data.kind,
+    sessionId: data.sessionId,
+    writtenQuestionId: data.writtenQuestionId,
+    subQuestionId: data.subQuestionId,
+    subQuestionText: data.subQuestionText,
+    points: data.points,
+    imageUrl: data.imageUrl,
+    status: "pending",
+    score: "",
+    annotatedImageUrl: "",
+    adminComment: "",
+    createdAt: new Date(),
+    gradedAt: "",
+  });
   return id;
 }
 
@@ -775,6 +809,10 @@ function getLeaderboard_(examType) {
 
 /* ---------------- অফলাইন পরীক্ষার প্রশ্নপত্র (PDF) ---------------- */
 
+// ওয়েবসাইটের বাংলা ফন্টের কাছাকাছি এবং Google Docs-এ নির্ভরযোগ্যভাবে পাওয়া যায় এমন ফন্ট
+const PDF_FONT = "Noto Sans Bengali";
+const CM_TO_PT = 28.35; // ১ সেন্টিমিটার = ২৮.৩৫ পয়েন্ট (Google Docs স্পেসিং এককে)
+
 /** Settings শিটে ছোট একটা JSON তালিকা হিসেবে "গত বার অফলাইনে কোন প্রশ্নগুলো
  *  ব্যবহার হয়েছিল" সংরক্ষণ করা হয় — যাতে পরের বার জেনারেট করলে যতটা সম্ভব
  *  ভিন্ন প্রশ্ন আসে (সম্পূর্ণ রিপিটেশন-মুক্ত না, কিন্তু ঝুঁকি অনেক কমে)। */
@@ -805,21 +843,45 @@ function fetchLogoBlob_() {
   }
 }
 
+/** পাতার একদম উপরে ছোট, কমপ্যাক্ট হেডার — লোগো (থাকলে) + "অগ্রদূত পরীক্ষা
+ *  কেন্দ্র" + শিরোনাম + সাবটাইটেল, সবই ছোট ফন্টে যাতে অহেতুক জায়গা নষ্ট না হয়। */
 function addPdfHeader_(body, title, subtitle) {
   const logo = fetchLogoBlob_();
   if (logo) {
     try {
-      const img = body.appendImage(logo);
-      img.setWidth(60);
-      img.setHeight(60);
+      const imgPara = body.appendParagraph("");
+      imgPara.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+      const img = imgPara.appendInlineImage(logo);
+      imgPara.setSpacingAfter(2);
+      img.setWidth(34);
+      img.setHeight(34);
     } catch (e) {
       // লোগো বসাতে সমস্যা হলেও বাকি ডকুমেন্ট চলতে থাকবে
     }
   }
-  body.appendParagraph("অগ্রদূত পরীক্ষা কেন্দ্র").setHeading(DocumentApp.ParagraphHeading.HEADING1).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  body.appendParagraph(title).setHeading(DocumentApp.ParagraphHeading.HEADING2).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  body.appendParagraph(subtitle).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  body.appendHorizontalRule();
+  body
+    .appendParagraph("অগ্রদূত পরীক্ষা কেন্দ্র")
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER)
+    .setFontFamily(PDF_FONT)
+    .setBold(true)
+    .setFontSize(13)
+    .setSpacingBefore(0)
+    .setSpacingAfter(2);
+  body
+    .appendParagraph(title)
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER)
+    .setFontFamily(PDF_FONT)
+    .setBold(true)
+    .setFontSize(11)
+    .setSpacingBefore(0)
+    .setSpacingAfter(1);
+  body
+    .appendParagraph(subtitle)
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER)
+    .setFontFamily(PDF_FONT)
+    .setFontSize(9)
+    .setSpacingBefore(0)
+    .setSpacingAfter(4);
 }
 
 /** সাধারণ HTML (আমাদের রিচ-টেক্সট এডিটর থেকে আসা) থেকে সাদামাটা প্লেইন টেক্সট
@@ -838,7 +900,18 @@ function htmlToPlainLines_(html) {
   return text.split("\n").map((l) => l.trim()).filter((l, i, arr) => l !== "" || (i > 0 && arr[i - 1] !== ""));
 }
 
+/** পুরো ডকুমেন্টের সবকিছুতে (যা যা আলাদাভাবে ফন্ট সেট করা হয়নি) ওয়েবসাইটের
+ *  মতো বাংলা ফন্ট বসিয়ে দেয় — শেষে একবার কল করলেই পুরো ডকুমেন্ট কভার হয়। */
+function applyDocFont_(body) {
+  try {
+    body.editAsText().setFontFamily(PDF_FONT);
+  } catch (e) {
+    // ফন্ট সেট করা না গেলেও PDF তৈরি হতে থাকবে, ডিফল্ট ফন্টে
+  }
+}
+
 function docToBase64Pdf_(doc) {
+  applyDocFont_(doc.getBody());
   doc.saveAndClose();
   const file = DriveApp.getFileById(doc.getId());
   const pdfBlob = file.getAs(MimeType.PDF);
@@ -847,8 +920,32 @@ function docToBase64Pdf_(doc) {
   return base64;
 }
 
-/** অফলাইন MCQ প্রশ্নপত্র — ৪০টা প্রশ্ন (একই ৫০/৩৫% বণ্টন মেনে), শেষ পাতায়
- *  উত্তরমালা। */
+/** একটা বর্ডারহীন ১-সারি-২-কলাম টেবিল বানিয়ে দেয় যাতে প্রশ্নগুলো পাশাপাশি
+ *  দুই কলামে সাজানো যায় (Google Docs-এর ক্লাসিক DocumentApp সার্ভিসে সরাসরি
+ *  "multi-column section" বসানোর কোনো উপায় নেই, তাই টেবিল দিয়ে একই ভিজ্যুয়াল
+ *  ফল আনা হয়েছে)। items-কে সমান দুই ভাগে ভেঙে left/right কলামে renderFn
+ *  দিয়ে বসানো হয়। */
+function appendTwoColumnList_(body, items, renderFn) {
+  const table = body.appendTable([["", ""]]);
+  table.setBorderWidth(0);
+  const half = Math.ceil(items.length / 2);
+  const leftCell = table.getCell(0, 0);
+  const rightCell = table.getCell(0, 1);
+  leftCell.setPaddingLeft(0).setPaddingRight(6);
+  rightCell.setPaddingLeft(6).setPaddingRight(0);
+  // ডিফল্ট খালি প্যারাগ্রাফ মুছে ফেলা (appendTable প্রতিটা সেলে একটা করে
+  // ফাঁকা প্যারাগ্রাফ যোগ করে দেয়)
+  leftCell.clear();
+  rightCell.clear();
+
+  items.forEach((item, i) => {
+    const cell = i < half ? leftCell : rightCell;
+    renderFn(cell, item, i);
+  });
+}
+
+/** অফলাইন MCQ প্রশ্নপত্র — ৪০টা প্রশ্ন (একই ৫০/৩৫% বণ্টন মেনে), দুই কলামে
+ *  সাজানো (পাতা কম লাগে), শেষ পাতায় উত্তরমালা। */
 function buildOfflineMcqPdf_() {
   const all = sheetToObjects_(getSheet_("Questions")).filter((q) => q.forMock);
   const recentlyUsed = getRecentlyUsedIds_("offlineMcqLastUsed");
@@ -858,26 +955,38 @@ function buildOfflineMcqPdf_() {
 
   const doc = DocumentApp.create("Offline MCQ - " + new Date().toISOString());
   const body = doc.getBody();
-  addPdfHeader_(body, "বহুনির্বাচনী প্রশ্ন", "প্রশ্ন সংখ্যা: ৪০টি · সময়: ৪০ মিনিট");
-  body.appendParagraph(" ");
+  body.setMarginTop(24).setMarginBottom(24).setMarginLeft(30).setMarginRight(30);
+  addPdfHeader_(body, "বহুনির্বাচনী প্রশ্ন", `প্রশ্ন সংখ্যা: ৪০টি · সময়: ৪০ মিনিট`);
 
   const LETTERS = ["ক", "খ", "গ", "ঘ"];
   const answerKey = [];
 
-  shuffled.forEach((q, i) => {
+  const withOptions = shuffled.map((q, i) => {
     const options = shuffleArray_(["A", "B", "C", "D"].map((k) => q["option" + k]));
     const correctText = correctTextForQuestion_(q);
-    const correctIdx = options.indexOf(correctText);
-    answerKey.push(LETTERS[correctIdx]);
+    answerKey.push(LETTERS[options.indexOf(correctText)]);
+    return { q, options, num: i + 1 };
+  });
 
-    body.appendParagraph(`${i + 1}. ${q.question}`).setSpacingBefore(6);
+  appendTwoColumnList_(body, withOptions, (cell, { q, options, num }) => {
+    cell
+      .appendParagraph(`${num}. ${q.question}`)
+      .setFontSize(9.5)
+      .setBold(true)
+      .setSpacingBefore(6)
+      .setSpacingAfter(1);
     options.forEach((opt, oi) => {
-      body.appendParagraph(`   ${LETTERS[oi]}) ${opt}`);
+      cell.appendParagraph(`${LETTERS[oi]}) ${opt}`).setFontSize(9.5).setSpacingBefore(0).setSpacingAfter(0);
     });
   });
 
   body.appendPageBreak();
-  body.appendParagraph("উত্তরমালা").setHeading(DocumentApp.ParagraphHeading.HEADING2).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  body
+    .appendParagraph("উত্তরমালা")
+    .setAlignment(DocumentApp.HorizontalAlignment.CENTER)
+    .setBold(true)
+    .setFontSize(12)
+    .setSpacingAfter(8);
   const answerLines = [];
   for (let i = 0; i < answerKey.length; i += 5) {
     answerLines.push(
@@ -887,7 +996,7 @@ function buildOfflineMcqPdf_() {
         .join("      ")
     );
   }
-  answerLines.forEach((line) => body.appendParagraph(line));
+  answerLines.forEach((line) => body.appendParagraph(line).setFontSize(10.5));
 
   saveRecentlyUsedIds_("offlineMcqLastUsed", shuffled.map((q) => q._row));
   return { base64: docToBase64Pdf_(doc), filename: "Agrodut-MCQ-" + Date.now() + ".pdf" };
@@ -904,8 +1013,41 @@ function pickAvoidingRepeats_dedupe_(all) {
   });
 }
 
-/** অফলাইন অনুধাবনমূলক প্রশ্নপত্র — ৩টা সেট, প্রতিটা আলাদা পাতায়, প্রতিটার
- *  নিচে উত্তর লেখার জায়গা। */
+/** সম্পূর্ণ প্রশ্ন ব্যাংক — প্রতিটা প্রশ্নের নিচেই সাথে সাথে সঠিক উত্তর ও
+ *  ব্যাখ্যা (থাকলে) দেখানো হয়, দুই কলামে সাজানো। এটা মডেল টেস্টের মতো ৪০টা
+ *  বাছাই করা প্রশ্ন না, বরং ব্যাংকের *সবগুলো* প্রশ্ন — অ্যাডমিন নিজে
+ *  পড়াশোনা/রিভিউ করার জন্য। */
+function buildFullQuestionBankPdf_() {
+  const all = sheetToObjects_(getSheet_("Questions"));
+  if (all.length === 0) {
+    throw new Error("প্রশ্ন ব্যাংকে এখনো কোনো প্রশ্ন নেই।");
+  }
+
+  const doc = DocumentApp.create("Question Bank - " + new Date().toISOString());
+  const body = doc.getBody();
+  body.setMarginTop(24).setMarginBottom(24).setMarginLeft(30).setMarginRight(30);
+  addPdfHeader_(body, "সম্পূর্ণ প্রশ্ন ব্যাংক (উত্তর ও ব্যাখ্যাসহ)", `মোট প্রশ্ন: ${all.length}টি`);
+
+  const LETTERS = { A: "ক", B: "খ", C: "গ", D: "ঘ" };
+
+  appendTwoColumnList_(body, all, (cell, q, i) => {
+    cell.appendParagraph(`${i + 1}. ${q.question}`).setFontSize(9.5).setBold(true).setSpacingBefore(6).setSpacingAfter(1);
+    ["A", "B", "C", "D"].forEach((k) => {
+      const isCorrect = k === q.correctOption;
+      const line = cell.appendParagraph(`${LETTERS[k]}) ${q["option" + k]}${isCorrect ? "  ✓" : ""}`).setFontSize(9.5).setSpacingBefore(0).setSpacingAfter(0);
+      if (isCorrect) line.setBold(true);
+    });
+    if (q.explanation) {
+      cell.appendParagraph(`ব্যাখ্যাঃ ${q.explanation}`).setFontSize(8.5).setItalic(true).setSpacingBefore(2).setSpacingAfter(0);
+    }
+  });
+
+  return { base64: docToBase64Pdf_(doc), filename: "Agrodut-QuestionBank-" + Date.now() + ".pdf" };
+}
+
+/** অফলাইন অনুধাবনমূলক প্রশ্নপত্র — ৩টা সেট, প্রতিটা আলাদা পাতায়। উদ্দীপক
+ *  উপরে ছোট ফন্টে, প্রতিটা প্রশ্নের নিচে দাগ না দিয়ে ২ সেন্টিমিটার ফাঁকা
+ *  জায়গা রাখা হয় ("উত্তরঃ" লিখে)। */
 function buildOfflineWrittenPdf_() {
   const all = parsedWrittenQuestions_().filter((q) => q.status === "published" && q.forMock && q.kind === "written");
   const recentlyUsed = getRecentlyUsedIds_("offlineWrittenLastUsed");
@@ -913,24 +1055,27 @@ function buildOfflineWrittenPdf_() {
 
   const doc = DocumentApp.create("Offline Written - " + new Date().toISOString());
   const body = doc.getBody();
+  body.setMarginTop(20).setMarginBottom(20).setMarginLeft(30).setMarginRight(30);
 
   picked.forEach((set, si) => {
     if (si > 0) body.appendPageBreak();
-    addPdfHeader_(body, "অনুধাবনমূলক প্রশ্নের উত্তর", "সময়: ৩০ মিনিট");
-    body.appendParagraph(" ");
+    addPdfHeader_(body, "অনুধাবনমূলক প্রশ্ন", "সময়: ৩০ মিনিট");
 
     htmlToPlainLines_(set.passageHtml).forEach((line) => {
-      body.appendParagraph(line).setItalic(true);
+      body.appendParagraph(line).setFontSize(9.5).setItalic(true).setSpacingBefore(0).setSpacingAfter(1);
     });
-    body.appendParagraph(" ");
+    body.appendParagraph(" ").setFontSize(4);
 
     (set.subQuestions || []).forEach((sq, qi) => {
       htmlToPlainLines_(sq.text).forEach((line, li) => {
-        body.appendParagraph((li === 0 ? `${qi + 1}. ` : "    ") + line + (li === 0 ? ` (${sq.points} নম্বর)` : ""));
+        body
+          .appendParagraph((li === 0 ? `${qi + 1}. ` : "    ") + line + (li === 0 ? ` (${sq.points} নম্বর)` : ""))
+          .setFontSize(10)
+          .setSpacingBefore(4)
+          .setSpacingAfter(0);
       });
-      // উত্তর লেখার জন্য কিছু ফাঁকা লাইন
-      for (let i = 0; i < 3; i++) body.appendParagraph("_______________________________________________");
-      body.appendParagraph(" ");
+      // দাগ না দিয়ে "উত্তরঃ" লিখে ২ সেন্টিমিটার ফাঁকা জায়গা রাখা হচ্ছে
+      body.appendParagraph("উত্তরঃ").setFontSize(9.5).setSpacingBefore(2).setSpacingAfter(CM_TO_PT * 2);
     });
   });
 
@@ -938,8 +1083,8 @@ function buildOfflineWrittenPdf_() {
   return { base64: docToBase64Pdf_(doc), filename: "Agrodut-Onudhabonmulok-" + Date.now() + ".pdf" };
 }
 
-/** অফলাইন বানান প্রতিযোগিতার প্রশ্নপত্র — ৫টা বানান একই পাতায়, প্রতিটার
- *  নিচে উত্তর লেখার জায়গা। */
+/** অফলাইন বানান প্রতিযোগিতার প্রশ্নপত্র — ৫টা বানান একই পাতায়, প্রতিটার নিচে
+ *  দাগ না দিয়ে ২ সেন্টিমিটার ফাঁকা জায়গা রাখা হয়। */
 function buildOfflineSpellingPdf_() {
   const all = parsedWrittenQuestions_().filter((q) => q.status === "published" && q.forMock && q.kind === "spelling");
   const flatItems = [];
@@ -953,12 +1098,12 @@ function buildOfflineSpellingPdf_() {
 
   const doc = DocumentApp.create("Offline Spelling - " + new Date().toISOString());
   const body = doc.getBody();
+  body.setMarginTop(20).setMarginBottom(20).setMarginLeft(30).setMarginRight(30);
   addPdfHeader_(body, "বিভাগীয় সেরা ২০ বানান প্রতিযোগিতা", "প্রশ্ন সংখ্যা: ৫টি · সময়: ২০ মিনিট");
-  body.appendParagraph(" ");
 
   picked.forEach((sq, i) => {
-    body.appendParagraph(`${i + 1}. ${sq.text}   (${sq.points} নম্বর)`).setSpacingBefore(10);
-    body.appendParagraph("উত্তরঃ _______________________________________________");
+    body.appendParagraph(`${i + 1}. ${sq.text}   (${sq.points} নম্বর)`).setFontSize(10.5).setSpacingBefore(6).setSpacingAfter(2);
+    body.appendParagraph("উত্তরঃ").setFontSize(9.5).setSpacingBefore(0).setSpacingAfter(CM_TO_PT * 2);
   });
 
   saveRecentlyUsedIds_("offlineSpellingLastUsed", picked.map((sq) => sq.id));
@@ -1365,6 +1510,15 @@ function doPost(e) {
         if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
         try {
           return jsonOut_({ ok: true, data: buildOfflineMcqPdf_() });
+        } catch (err) {
+          return jsonOut_({ ok: false, message: "PDF তৈরি করা যায়নি: " + String(err) });
+        }
+      }
+
+      case "adminGenerateQuestionBankPdf": {
+        if (!checkAdminToken_(body.token)) return jsonOut_({ ok: false, message: "Unauthorized" });
+        try {
+          return jsonOut_({ ok: true, data: buildFullQuestionBankPdf_() });
         } catch (err) {
           return jsonOut_({ ok: false, message: "PDF তৈরি করা যায়নি: " + String(err) });
         }

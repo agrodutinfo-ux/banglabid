@@ -70,6 +70,7 @@ export const api = {
   adminGradeWrittenBatch: (token, payload) => callApi("adminGradeWrittenBatch", { token, ...payload }),
   adminLiveResults: (token) => callApi("adminLiveResults", { token }),
   adminGenerateOfflineMcq: (token) => callApi("adminGenerateOfflineMcq", { token }),
+  adminGenerateQuestionBankPdf: (token) => callApi("adminGenerateQuestionBankPdf", { token }),
   adminGenerateOfflineWritten: (token) => callApi("adminGenerateOfflineWritten", { token }),
   adminGenerateOfflineSpelling: (token) => callApi("adminGenerateOfflineSpelling", { token }),
 };

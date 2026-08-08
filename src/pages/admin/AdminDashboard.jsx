@@ -787,7 +787,11 @@ const EXAM_TYPE_LABEL_ADMIN = { mock: "মক", live: "লাইভ" };
 function groupPendingWritten_(list) {
   const groups = {};
   list.forEach((item) => {
-    const key = `${item.sessionId}|${item.writtenQuestionId}`;
+    // ছবির লিংক দিয়ে গ্রুপ করা হয় — একটা আপলোড (submitWrittenAnswersBatch)
+    // সবসময় একটাই ছবি তৈরি করে যেটা সেই ব্যাচের সবকটা প্রশ্ন শেয়ার করে,
+    // এমনকি প্রশ্নগুলো ভিন্ন ভিন্ন মূল ডকুমেন্ট (writtenQuestionId) থেকে
+    // আসলেও (যেমন বানানের ৫টা শব্দ) — তাই ছবিই আসল গ্রুপিং কী।
+    const key = item.imageUrl;
     if (!groups[key]) groups[key] = { key, imageUrl: item.imageUrl, kind: item.kind, examType: item.examType, items: [] };
     groups[key].items.push(item);
   });
@@ -991,9 +995,15 @@ function OfflineExams({ token }) {
   const items = [
     {
       key: "mcq",
-      title: "এমসিকিউ প্রশ্নপত্র",
+      title: "এমসিকিউ প্রশ্নপত্র (মডেল টেস্ট)",
       desc: "৪০টি প্রশ্ন (৫০% সাহিত্য/৫০% ব্যাকরণ, ব্যাকরণের ৩৫% বানান), সময় ৪০ মিনিট — শেষ পাতায় উত্তরমালা।",
       call: api.adminGenerateOfflineMcq,
+    },
+    {
+      key: "questionBank",
+      title: "সম্পূর্ণ প্রশ্ন ব্যাংক (উত্তর ও ব্যাখ্যাসহ)",
+      desc: "প্রশ্ন ব্যাংকের সবগুলো প্রশ্ন — প্রতিটার নিচেই সাথে সাথে সঠিক উত্তর ও ব্যাখ্যা। এটা মডেল টেস্ট না, রিভিউ/স্টাডি ম্যাটেরিয়াল হিসেবে।",
+      call: api.adminGenerateQuestionBankPdf,
     },
     {
       key: "written",
